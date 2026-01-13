@@ -276,57 +276,81 @@ export class CommandService {
     }
 
     const status = this.context.getStatus();
+    console.log(`[CMD] QR command - current status: ${status}`);
 
     // If connected, need to reset session first
     if (status === 'connected') {
+      console.log('[CMD] Resetting session to generate new QR...');
       await this.context.resetSession();
-      // Wait a bit for new QR to be generated
-      await new Promise(resolve => setTimeout(resolve, 3000));
     }
 
-    const qrDataUrl = await this.context.getQrCodeDataUrl();
+    // Poll for QR code with retries (wait up to 15 seconds)
+    let qrDataUrl: string | null = null;
+    const maxRetries = 15;
+    for (let i = 0; i < maxRetries; i++) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      qrDataUrl = await this.context.getQrCodeDataUrl();
+      if (qrDataUrl) {
+        console.log(`[CMD] QR code obtained after ${i + 1} seconds`);
+        break;
+      }
+      console.log(`[CMD] Waiting for QR... attempt ${i + 1}/${maxRetries}`);
+    }
 
     if (!qrDataUrl) {
+      const currentStatus = this.context.getStatus();
+      console.log(`[CMD] QR code not available after ${maxRetries} attempts. Status: ${currentStatus}`);
       return {
         success: false,
-        message: '⚠️ QR code not available. Current status: ' + status,
+        message: `⚠️ QR code not available after ${maxRetries}s. Status: ${currentStatus}`,
         shouldReply: true,
       };
     }
 
     // Extract base64 data from data URL
     const base64Data = qrDataUrl.replace(/^data:image\/png;base64,/, '');
+    console.log(`[CMD] Sending QR code email to ${recipient}...`);
 
-    await this.emailService.sendEmail({
-      to: recipient,
-      from: config.email.from,
-      fromName: config.email.fromName,
-      subject: '🔐 WhatsApp QR Code - Scan to Connect',
-      body: `
-        <h2>WhatsApp QR Code</h2>
-        <p>Scan this QR code with your WhatsApp app to connect:</p>
-        <p><strong>WhatsApp → Settings → Linked Devices → Link a Device</strong></p>
-        <div style="background: white; padding: 20px; display: inline-block; border: 1px solid #ddd; border-radius: 8px;">
-          <img src="cid:qrcode" alt="QR Code" style="width: 300px; height: 300px;" />
-        </div>
-        <p style="color: #666; font-size: 12px; margin-top: 20px;">
-          This QR code expires in a few minutes. If it expires, send the 'qr' command again.
-        </p>
-      `,
-      textBody: 'WhatsApp QR Code - Please view this email in HTML format to see the QR code.',
-      attachment: {
-        filename: 'qrcode.png',
-        content: Buffer.from(base64Data, 'base64'),
-        contentType: 'image/png',
-        cid: 'qrcode',
-      },
-    });
+    try {
+      await this.emailService.sendEmail({
+        to: recipient,
+        from: config.email.from,
+        fromName: config.email.fromName,
+        subject: '🔐 WhatsApp QR Code - Scan to Connect',
+        body: `
+          <h2>WhatsApp QR Code</h2>
+          <p>Scan this QR code with your WhatsApp app to connect:</p>
+          <p><strong>WhatsApp → Settings → Linked Devices → Link a Device</strong></p>
+          <div style="background: white; padding: 20px; display: inline-block; border: 1px solid #ddd; border-radius: 8px;">
+            <img src="cid:qrcode" alt="QR Code" style="width: 300px; height: 300px;" />
+          </div>
+          <p style="color: #666; font-size: 12px; margin-top: 20px;">
+            This QR code expires in a few minutes. If it expires, send the 'qr' command again.
+          </p>
+        `,
+        textBody: 'WhatsApp QR Code - Please view this email in HTML format to see the QR code.',
+        attachment: {
+          filename: 'qrcode.png',
+          content: Buffer.from(base64Data, 'base64'),
+          contentType: 'image/png',
+          cid: 'qrcode',
+        },
+      });
 
-    return {
-      success: true,
-      message: `✅ QR code sent to ${recipient}. Check your email and scan it.`,
-      shouldReply: true,
-    };
+      console.log('[CMD] QR code email sent successfully');
+      return {
+        success: true,
+        message: `✅ QR code sent to ${recipient}. Check your email and scan it.`,
+        shouldReply: true,
+      };
+    } catch (error) {
+      console.error('[CMD] Error sending QR code email:', error);
+      return {
+        success: false,
+        message: `⚠️ Error sending email: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        shouldReply: true,
+      };
+    }
   }
 
   /**

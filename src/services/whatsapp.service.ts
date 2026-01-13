@@ -100,7 +100,7 @@ export class WhatsAppService {
       },
       logger: logger as any,
       browser: Browsers.macOS('Chrome'),
-      syncFullHistory: true,
+      syncFullHistory: false, // Only sync recent messages, not full history
       markOnlineOnConnect: false,
       generateHighQualityLinkPreview: false,
       // getMessage is required for message retries
@@ -293,9 +293,17 @@ export class WhatsAppService {
       return;
     }
 
+    if (this.status !== 'connected') {
+      console.error(`[WA] Cannot send message: not connected (status: ${this.status})`);
+      return;
+    }
+
+    // Ensure JID has proper format
+    const formattedJid = jid.includes('@') ? jid : `${jid}@s.whatsapp.net`;
+
     try {
-      await this.socket.sendMessage(jid, { text });
-      console.log(`[WA] Reply sent to ${jid}`);
+      await this.socket.sendMessage(formattedJid, { text });
+      console.log(`[WA] Reply sent to ${formattedJid}`);
     } catch (error) {
       console.error('[WA] Error sending message:', error);
     }
