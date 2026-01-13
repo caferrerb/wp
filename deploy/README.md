@@ -153,15 +153,17 @@ Edit `~/whatsapp-app/.env` on EC2:
 | `PORT` | Server port | `3000` |
 | `NODE_ENV` | Environment | `production` |
 
-### Email Configuration
+### Email Configuration (MailerSend)
 
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `EMAIL_PROVIDER` | Email service | `mailersend` |
 | `MAILERSEND_API_KEY` | MailerSend API key | `mlsn.xxxxx` |
-| `EMAIL_FROM` | Sender email (verified) | `noreply@yourdomain.com` |
+| `EMAIL_FROM` | Sender email (must use verified domain) | `noreply@your-domain.mlsender.net` |
 | `EMAIL_FROM_NAME` | Sender display name | `WhatsApp Receiver` |
 | `EMAIL_REPORT_TO` | Recipient for reports | `you@example.com` |
+
+> **Important:** `EMAIL_FROM` must use a domain verified in MailerSend. For test accounts, use the provided `mlsender.net` subdomain (e.g., `noreply@test-xxxxx.mlsender.net`).
 
 ### Daily Report Configuration
 
@@ -184,12 +186,12 @@ NODE_ENV=production
 SESSION_PATH=./wa_session
 DATA_PATH=./data
 
-# Email
+# Email (MailerSend)
 EMAIL_PROVIDER=mailersend
 MAILERSEND_API_KEY=mlsn.your_api_key_here
-EMAIL_FROM=noreply@mycompany.com
+EMAIL_FROM=noreply@your-domain.mlsender.net
 EMAIL_FROM_NAME=WhatsApp Alerts
-EMAIL_REPORT_TO=team@mycompany.com
+EMAIL_REPORT_TO=your-email@example.com
 
 # Daily Report
 DAILY_REPORT_ENABLED=true
