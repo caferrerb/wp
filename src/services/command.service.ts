@@ -66,6 +66,10 @@ export class CommandService {
    * Parse and execute a command from a message
    */
   async executeCommand(message: string, fromNumber: string): Promise<CommandResult | null> {
+    console.log(`[CMD] executeCommand called: from=${fromNumber}, msg="${message}"`);
+    console.log(`[CMD] Allowed numbers:`, config.commands.allowedNumbers);
+    console.log(`[CMD] isCommandNumber:`, this.isCommandNumber(fromNumber));
+
     if (!this.isCommandNumber(fromNumber)) {
       return null;
     }

@@ -265,17 +265,22 @@ export class WhatsAppService {
       console.log(`Message saved: [${extracted.type}] from ${senderName || remoteJid}`);
     }
 
-    // Check for commands (only for text messages, not from groups)
+    // Check for commands (only for text messages, not from groups, and only recent messages)
     // Commands can come from configured numbers, even if fromMe is true (same account)
-    if (this.commandService && extracted.type === 'text' && !isGroup) {
-      // For fromMe messages, use remoteJid as the "sender" to check command permissions
-      // For received messages, the sender is already remoteJid
+    // Only process commands from messages less than 60 seconds old to avoid executing on history sync
+    const messageAgeSeconds = Math.floor(Date.now() / 1000) - timestamp;
+    const isRecentMessage = messageAgeSeconds < 60;
+
+    if (this.commandService && extracted.type === 'text' && !isGroup && isRecentMessage) {
       const senderNumber = remoteJid;
+      console.log(`[CMD] Checking command from ${senderNumber}: "${extracted.content}" (age: ${messageAgeSeconds}s)`);
       const commandResult = await this.commandService.executeCommand(extracted.content, senderNumber);
+      console.log(`[CMD] Command result:`, commandResult);
       if (commandResult && commandResult.shouldReply) {
-        // Reply to the conversation (remoteJid)
         await this.sendTextMessage(remoteJid, commandResult.message);
       }
+    } else if (this.commandService && extracted.type === 'text' && !isGroup && !isRecentMessage) {
+      console.log(`[CMD] Skipping old message (age: ${messageAgeSeconds}s): "${extracted.content}"`);
     }
   }
 
