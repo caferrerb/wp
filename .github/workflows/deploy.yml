@@ -8,9 +8,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  DOCKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/whatsapp-receiver
-
 jobs:
   # ============================================
   # Build and Test
@@ -36,74 +33,33 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
-  # ============================================
-  # Build and Push Docker Image
-  # ============================================
-  build-and-push-docker:
-    needs: build-and-test
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push'
-    outputs:
-      image_tag: ${{ steps.meta.outputs.version }}
-      tags: ${{ steps.meta.outputs.tags }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.DOCKER_IMAGE }}
-          tags: |
-            # For tags (v1.0.0) -> v1.0.0, latest
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            # For main branch -> sha-xxxx, latest
-            type=sha,prefix=sha-,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Output image info
-        run: |
-          echo "### Docker Image Built :whale:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          name: dist
+          path: |
+            dist/
+            package.json
+            package-lock.json
+            ecosystem.config.cjs
+            src/public/
+          retention-days: 1
 
   # ============================================
   # Deploy to EC2 (only on main branch)
   # ============================================
   deploy-to-ec2:
-    needs: build-and-push-docker
+    needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: production
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: ./artifacts
 
       - name: Setup SSH key
         run: |
@@ -112,44 +68,56 @@ jobs:
           chmod 600 ~/.ssh/ec2_key
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Copy deployment files to EC2
-        run: |
-          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no \
-            deploy/docker-compose.yml \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/whatsapp-app/
-
       - name: Deploy to EC2
-        env:
-          DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
-          IMAGE_TAG: latest
         run: |
+          # Create deployment package
+          cd artifacts
+          tar -czf ../deploy.tar.gz .
+
+          # Copy to EC2
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no \
+            ../deploy.tar.gz \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/
+
+          # Deploy on EC2
           ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no \
             ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
 
-          cd /home/${{ secrets.EC2_USER }}/whatsapp-app
+          set -e
+          APP_DIR=~/whatsapp-app
 
-          # Login to Docker Hub
-          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+          echo "=== Deploying WhatsApp Receiver ==="
 
-          # Export variables for docker-compose
-          export DOCKER_IMAGE="${{ env.DOCKER_IMAGE }}"
-          export IMAGE_TAG="latest"
+          # Backup current version
+          if [ -d "$APP_DIR/dist" ]; then
+            echo "Backing up current version..."
+            cp -r $APP_DIR/dist $APP_DIR/dist.backup 2>/dev/null || true
+          fi
 
-          # Pull the latest image
-          docker pull ${DOCKER_IMAGE}:${IMAGE_TAG}
+          # Extract new version
+          echo "Extracting new version..."
+          cd $APP_DIR
+          tar -xzf /tmp/deploy.tar.gz
 
-          # Stop and remove old container (preserving volumes!)
-          docker-compose down --remove-orphans || true
+          # Copy public files to dist
+          cp -r src/public dist/ 2>/dev/null || true
 
-          # Start with new image
-          docker-compose up -d
+          # Install production dependencies
+          echo "Installing dependencies..."
+          npm ci --only=production
 
-          # Cleanup old images
-          docker image prune -f
+          # Reload or start PM2
+          echo "Reloading application..."
+          pm2 reload whatsapp-receiver --update-env 2>/dev/null || pm2 start ecosystem.config.cjs
+          pm2 save
 
-          # Show status
+          # Cleanup
+          rm -f /tmp/deploy.tar.gz
+          rm -rf $APP_DIR/dist.backup
+
+          echo ""
           echo "=== Deployment Complete ==="
-          docker-compose ps
+          pm2 status
 
           ENDSSH
 
@@ -162,5 +130,5 @@ jobs:
           echo "### Deployment Complete :rocket:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** Production" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ env.DOCKER_IMAGE }}:latest\`" >> $GITHUB_STEP_SUMMARY
           echo "**Host:** \`${{ secrets.EC2_HOST }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY

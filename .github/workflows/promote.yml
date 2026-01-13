@@ -3,22 +3,19 @@ name: Promote to Production
 on:
   workflow_dispatch:
     inputs:
-      image_tag:
-        description: 'Docker image tag to deploy (e.g., v1.0.0, sha-abc1234, latest)'
+      git_ref:
+        description: 'Git ref to deploy (tag, branch, or commit SHA)'
         required: true
-        default: 'latest'
+        default: 'main'
         type: string
       confirm:
         description: 'Type "deploy" to confirm deployment'
         required: true
         type: string
 
-env:
-  DOCKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/whatsapp-receiver
-
 jobs:
   # ============================================
-  # Validate and Deploy
+  # Validate and Build
   # ============================================
   validate:
     runs-on: ubuntu-latest
@@ -29,37 +26,56 @@ jobs:
           echo "::error::Deployment not confirmed. Please type 'deploy' in the confirm field."
           exit 1
 
-      - name: Validate image tag
-        run: |
-          if [ -z "${{ github.event.inputs.image_tag }}" ]; then
-            echo "::error::Image tag is required"
-            exit 1
-          fi
-          echo "Deploying tag: ${{ github.event.inputs.image_tag }}"
-
-  deploy:
+  build:
     needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.git_ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist/
+            package.json
+            package-lock.json
+            ecosystem.config.cjs
+            src/public/
+          retention-days: 1
+
+  # ============================================
+  # Deploy to EC2
+  # ============================================
+  deploy:
+    needs: build
     runs-on: ubuntu-latest
     environment: production
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Verify image exists
-        run: |
-          echo "Checking if image exists: ${{ env.DOCKER_IMAGE }}:${{ github.event.inputs.image_tag }}"
-          docker manifest inspect ${{ env.DOCKER_IMAGE }}:${{ github.event.inputs.image_tag }} > /dev/null 2>&1 || {
-            echo "::error::Image ${{ env.DOCKER_IMAGE }}:${{ github.event.inputs.image_tag }} not found in Docker Hub"
-            exit 1
-          }
-          echo "Image verified successfully"
+          name: dist
+          path: ./artifacts
 
       - name: Setup SSH key
         run: |
@@ -68,45 +84,57 @@ jobs:
           chmod 600 ~/.ssh/ec2_key
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Copy deployment files to EC2
-        run: |
-          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no \
-            deploy/docker-compose.yml \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/whatsapp-app/
-
       - name: Deploy to EC2
         run: |
+          # Create deployment package
+          cd artifacts
+          tar -czf ../deploy.tar.gz .
+
+          # Copy to EC2
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no \
+            ../deploy.tar.gz \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/
+
+          # Deploy on EC2
           ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no \
             ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
 
-          cd /home/${{ secrets.EC2_USER }}/whatsapp-app
+          set -e
+          APP_DIR=~/whatsapp-app
 
-          # Login to Docker Hub
-          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+          echo "=== Promoting WhatsApp Receiver ==="
+          echo "Git Ref: ${{ github.event.inputs.git_ref }}"
 
-          # Export variables for docker-compose
-          export DOCKER_IMAGE="${{ env.DOCKER_IMAGE }}"
-          export IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+          # Backup current version
+          if [ -d "$APP_DIR/dist" ]; then
+            echo "Backing up current version..."
+            cp -r $APP_DIR/dist $APP_DIR/dist.backup 2>/dev/null || true
+          fi
 
-          echo "Deploying $DOCKER_IMAGE:$IMAGE_TAG"
+          # Extract new version
+          echo "Extracting new version..."
+          cd $APP_DIR
+          tar -xzf /tmp/deploy.tar.gz
 
-          # Pull the specific image
-          docker pull ${DOCKER_IMAGE}:${IMAGE_TAG}
+          # Copy public files to dist
+          cp -r src/public dist/ 2>/dev/null || true
 
-          # Stop and remove old container (preserving volumes!)
-          docker-compose down --remove-orphans || true
+          # Install production dependencies
+          echo "Installing dependencies..."
+          npm ci --only=production
 
-          # Start with new image
-          docker-compose up -d
+          # Reload or start PM2
+          echo "Reloading application..."
+          pm2 reload whatsapp-receiver --update-env 2>/dev/null || pm2 start ecosystem.config.cjs
+          pm2 save
 
-          # Cleanup old images
-          docker image prune -f
+          # Cleanup
+          rm -f /tmp/deploy.tar.gz
+          rm -rf $APP_DIR/dist.backup
 
-          # Show status
-          echo "=== Deployment Complete ==="
-          docker-compose ps
           echo ""
-          echo "Deployed version: ${IMAGE_TAG}"
+          echo "=== Promotion Complete ==="
+          pm2 status
 
           ENDSSH
 
@@ -118,8 +146,6 @@ jobs:
         run: |
           echo "### Promotion Complete :rocket:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image Tag:** \`${{ github.event.inputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Full Image:** \`${{ env.DOCKER_IMAGE }}:${{ github.event.inputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Git Ref:** \`${{ github.event.inputs.git_ref }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Host:** \`${{ secrets.EC2_HOST }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY

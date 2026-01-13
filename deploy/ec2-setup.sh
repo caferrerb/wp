@@ -1,206 +1,206 @@
 #!/bin/bash
 # ===========================================
-# EC2 Initial Setup Script for WhatsApp Receiver
-# ===========================================
-# Run this script once on a fresh EC2 instance
-# Supports: Amazon Linux 2023, Ubuntu 22.04+
+# EC2 Setup Script for WhatsApp Receiver
+# Using Node.js + PM2 (without Docker)
 # ===========================================
 
 set -e
 
-echo "==========================================="
-echo "  WhatsApp Receiver - EC2 Setup"
-echo "==========================================="
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+echo "=========================================="
+echo "WhatsApp Receiver - EC2 Setup (PM2)"
+echo "=========================================="
 
 # Detect OS
 if [ -f /etc/os-release ]; then
     . /etc/os-release
     OS=$ID
 else
-    echo -e "${RED}Cannot detect OS${NC}"
+    echo "Cannot detect OS"
     exit 1
 fi
 
-echo -e "${GREEN}Detected OS: $OS${NC}"
+echo "Detected OS: $OS"
 
-# Install Docker
+# Install Node.js 20.x
 echo ""
-echo -e "${YELLOW}[1/5] Installing Docker...${NC}"
-if [ "$OS" = "amzn" ] || [ "$OS" = "amazon" ]; then
-    # Amazon Linux
-    sudo yum update -y
-    sudo yum install -y docker git
-    sudo systemctl start docker
-    sudo systemctl enable docker
-    sudo usermod -aG docker $USER
+echo "Installing Node.js 20.x..."
+if [ "$OS" = "amzn" ]; then
+    # Amazon Linux 2023
+    curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+    sudo yum install -y nodejs
 elif [ "$OS" = "ubuntu" ]; then
     # Ubuntu
-    sudo apt-get update
-    sudo apt-get install -y ca-certificates curl gnupg git
-    sudo install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    sudo chmod a+r /etc/apt/keyrings/docker.gpg
-    echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-      sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-    sudo apt-get update
-    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-    sudo usermod -aG docker $USER
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+    sudo apt-get install -y nodejs
 else
-    echo -e "${RED}Unsupported OS: $OS${NC}"
+    echo "Unsupported OS: $OS"
     exit 1
 fi
 
-# Install Docker Compose standalone
+echo "Node.js version: $(node --version)"
+echo "npm version: $(npm --version)"
+
+# Install PM2 globally
 echo ""
-echo -e "${YELLOW}[2/5] Installing Docker Compose...${NC}"
-DOCKER_COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
-sudo curl -L "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
-echo -e "${GREEN}Docker Compose version: ${DOCKER_COMPOSE_VERSION}${NC}"
+echo "Installing PM2..."
+sudo npm install -g pm2
+
+# Setup PM2 to start on boot
+echo ""
+echo "Configuring PM2 startup..."
+sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u $USER --hp $HOME
 
 # Create application directory
-APP_DIR="/home/$USER/whatsapp-app"
+APP_DIR="$HOME/whatsapp-app"
 echo ""
-echo -e "${YELLOW}[3/5] Creating application directory: ${APP_DIR}${NC}"
+echo "Creating application directory: $APP_DIR"
 mkdir -p $APP_DIR
-cd $APP_DIR
+mkdir -p $APP_DIR/logs
+mkdir -p $APP_DIR/data
+mkdir -p $APP_DIR/wa_session
 
-# Create .env file from example
-echo ""
-echo -e "${YELLOW}[4/5] Creating configuration files...${NC}"
-if [ ! -f .env ]; then
-    cat > .env << 'ENVEOF'
-# WhatsApp Receiver Configuration
-# Edit these values before starting the application
+# Create .env file template
+if [ ! -f "$APP_DIR/.env" ]; then
+    echo ""
+    echo "Creating .env template..."
+    cat > $APP_DIR/.env << 'ENVEOF'
+# ===========================================
+# WhatsApp Receiver - Environment Variables
+# ===========================================
 
-# Docker Image
-DOCKER_IMAGE=your-dockerhub-username/whatsapp-receiver
-IMAGE_TAG=latest
+# Server
+PORT=3000
+NODE_ENV=production
 
-# Application
-APP_PORT=3000
+# Paths (relative to app directory)
+SESSION_PATH=./wa_session
+DATA_PATH=./data
 
-# Email (optional - for daily reports)
+# Email Configuration (MailerSend)
 EMAIL_PROVIDER=mailersend
-MAILERSEND_API_KEY=
-EMAIL_FROM=
+MAILERSEND_API_KEY=mlsn.your_api_key_here
+EMAIL_FROM=noreply@yourdomain.com
 EMAIL_FROM_NAME=WhatsApp Receiver
-EMAIL_REPORT_TO=
+EMAIL_REPORT_TO=your-email@example.com
 
 # Daily Report
-DAILY_REPORT_ENABLED=false
+DAILY_REPORT_ENABLED=true
 DAILY_REPORT_HOUR=8
 DAILY_REPORT_MINUTE=0
-EMAIL_FILTER_NUMBERS=
+EMAIL_FILTER_NUMBERS=573001234567,573009876543
 
 # Timezone
 TZ=America/Bogota
 ENVEOF
-    echo -e "${GREEN}Created .env file${NC}"
-else
-    echo -e "${YELLOW}.env file already exists, skipping${NC}"
+    echo "Created .env template at $APP_DIR/.env"
+    echo "IMPORTANT: Edit this file with your actual values!"
 fi
 
-# Create deployment script
+# Create helper scripts
 echo ""
-echo -e "${YELLOW}[5/5] Creating helper scripts...${NC}"
+echo "Creating helper scripts..."
 
-cat > deploy.sh << 'DEPLOYEOF'
+# Deploy script
+cat > $APP_DIR/deploy.sh << 'SCRIPTEOF'
 #!/bin/bash
-# Quick deployment script
-set -e
+cd ~/whatsapp-app
+pm2 reload whatsapp-receiver --update-env || pm2 start ecosystem.config.cjs
+pm2 save
+echo "Deploy complete!"
+SCRIPTEOF
+chmod +x $APP_DIR/deploy.sh
 
-echo "Pulling latest image..."
-docker-compose pull
-
-echo "Restarting container..."
-docker-compose down --remove-orphans
-docker-compose up -d
-
-echo "Cleaning up old images..."
-docker image prune -f
-
-echo "Status:"
-docker-compose ps
-DEPLOYEOF
-chmod +x deploy.sh
-
-cat > logs.sh << 'LOGSEOF'
+# Logs script
+cat > $APP_DIR/logs.sh << 'SCRIPTEOF'
 #!/bin/bash
-# View application logs
-docker-compose logs -f --tail=100
-LOGSEOF
-chmod +x logs.sh
+pm2 logs whatsapp-receiver --lines 100
+SCRIPTEOF
+chmod +x $APP_DIR/logs.sh
 
-cat > status.sh << 'STATUSEOF'
+# Status script
+cat > $APP_DIR/status.sh << 'SCRIPTEOF'
 #!/bin/bash
-# Check application status
-echo "=== Container Status ==="
-docker-compose ps
+echo "=== PM2 Status ==="
+pm2 status
 echo ""
-echo "=== Docker Volumes ==="
-docker volume ls | grep whatsapp
-echo ""
-echo "=== Recent Logs ==="
-docker-compose logs --tail=20
-STATUSEOF
-chmod +x status.sh
+echo "=== App Info ==="
+pm2 describe whatsapp-receiver
+SCRIPTEOF
+chmod +x $APP_DIR/status.sh
 
-cat > backup.sh << 'BACKUPEOF'
+# Restart script
+cat > $APP_DIR/restart.sh << 'SCRIPTEOF'
 #!/bin/bash
-# Backup data and session
-BACKUP_DIR="./backups/$(date +%Y%m%d_%H%M%S)"
+cd ~/whatsapp-app
+pm2 restart whatsapp-receiver
+echo "Restart complete!"
+SCRIPTEOF
+chmod +x $APP_DIR/restart.sh
+
+# Stop script
+cat > $APP_DIR/stop.sh << 'SCRIPTEOF'
+#!/bin/bash
+pm2 stop whatsapp-receiver
+echo "App stopped"
+SCRIPTEOF
+chmod +x $APP_DIR/stop.sh
+
+# Backup script
+cat > $APP_DIR/backup.sh << 'SCRIPTEOF'
+#!/bin/bash
+BACKUP_DIR=~/backups
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 mkdir -p $BACKUP_DIR
 
-echo "Backing up database..."
-docker cp whatsapp-receiver:/app/data/messages.db $BACKUP_DIR/
+echo "Creating backup..."
+tar -czf $BACKUP_DIR/whatsapp_backup_$TIMESTAMP.tar.gz \
+    -C ~/whatsapp-app \
+    data wa_session .env
 
-echo "Backing up session..."
-docker run --rm -v whatsapp_session:/data -v $(pwd)/$BACKUP_DIR:/backup alpine tar czf /backup/session.tar.gz -C /data .
+echo "Backup created: $BACKUP_DIR/whatsapp_backup_$TIMESTAMP.tar.gz"
 
-echo "Backup completed: $BACKUP_DIR"
-ls -la $BACKUP_DIR
-BACKUPEOF
-chmod +x backup.sh
+# Keep only last 7 backups
+cd $BACKUP_DIR && ls -t whatsapp_backup_*.tar.gz | tail -n +8 | xargs -r rm
+echo "Old backups cleaned up"
+SCRIPTEOF
+chmod +x $APP_DIR/backup.sh
 
-# Final instructions
+# Open firewall port 3000
 echo ""
-echo "==========================================="
-echo -e "${GREEN}  Setup Complete!${NC}"
-echo "==========================================="
+echo "Configuring firewall..."
+if [ "$OS" = "amzn" ]; then
+    # Amazon Linux - usually uses security groups, but check for firewalld
+    if command -v firewall-cmd &> /dev/null; then
+        sudo firewall-cmd --permanent --add-port=3000/tcp 2>/dev/null || true
+        sudo firewall-cmd --reload 2>/dev/null || true
+    fi
+elif [ "$OS" = "ubuntu" ]; then
+    # Ubuntu with ufw
+    if command -v ufw &> /dev/null; then
+        sudo ufw allow 3000/tcp 2>/dev/null || true
+    fi
+fi
+
 echo ""
-echo -e "${YELLOW}IMPORTANT: Log out and log back in for Docker permissions to take effect${NC}"
+echo "=========================================="
+echo "Setup Complete!"
+echo "=========================================="
 echo ""
 echo "Next steps:"
+echo "1. Edit the .env file with your settings:"
+echo "   nano $APP_DIR/.env"
 echo ""
-echo "  1. Log out and log back in:"
-echo "     ${GREEN}exit${NC}"
+echo "2. The app will be deployed automatically via GitHub Actions"
+echo "   Or deploy manually by copying files and running:"
+echo "   cd $APP_DIR && npm ci --only=production && pm2 start ecosystem.config.cjs"
 echo ""
-echo "  2. Edit the configuration file:"
-echo "     ${GREEN}cd $APP_DIR && nano .env${NC}"
+echo "3. Open port 3000 in your EC2 Security Group"
 echo ""
-echo "  3. Copy docker-compose.yml to this directory"
-echo "     (This will be done automatically by GitHub Actions)"
-echo ""
-echo "  4. Start the application:"
-echo "     ${GREEN}./deploy.sh${NC}"
-echo ""
-echo "  5. Open in browser and scan QR code:"
-echo "     ${GREEN}http://YOUR_EC2_IP:3000${NC}"
-echo ""
-echo "Helper scripts created:"
-echo "  - ./deploy.sh  - Deploy/update the application"
-echo "  - ./logs.sh    - View application logs"
-echo "  - ./status.sh  - Check application status"
-echo "  - ./backup.sh  - Backup data and session"
-echo ""
-echo "==========================================="
+echo "Helper scripts available:"
+echo "  ./deploy.sh   - Deploy/reload the app"
+echo "  ./logs.sh     - View application logs"
+echo "  ./status.sh   - Check app status"
+echo "  ./restart.sh  - Restart the app"
+echo "  ./stop.sh     - Stop the app"
+echo "  ./backup.sh   - Backup data and session"
 echo ""

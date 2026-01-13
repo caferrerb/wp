@@ -1,4 +1,4 @@
-# WhatsApp Receiver - Deployment Guide
+# WhatsApp Receiver - Deployment Guide (PM2)
 
 ## Table of Contents
 
@@ -8,9 +8,8 @@
 4. [EC2 Initial Setup](#ec2-initial-setup)
 5. [Environment Variables](#environment-variables)
 6. [Deployment Workflows](#deployment-workflows)
-7. [Session Persistence](#session-persistence)
-8. [Manual Operations](#manual-operations)
-9. [Troubleshooting](#troubleshooting)
+7. [PM2 Commands](#pm2-commands)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -25,10 +24,10 @@ This application is a WhatsApp message receiver that:
 ### Deployment Flow
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐     ┌─────────────┐
-│   GitHub    │────▶│   Build &    │────▶│  Docker Hub │────▶│    EC2      │
-│   Push      │     │   Test       │     │   (Image)   │     │  (Deploy)   │
-└─────────────┘     └──────────────┘     └─────────────┘     └─────────────┘
+┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│   GitHub    │────▶│   Build &    │────▶│    EC2      │
+│   Push      │     │   Test       │     │  (PM2)      │
+└─────────────┘     └──────────────┘     └─────────────┘
                            │
                     ┌──────┴──────┐
                     │   ESLint    │
@@ -41,30 +40,22 @@ This application is a WhatsApp message receiver that:
 
 ## Architecture
 
-### Docker Volumes (Session Persistence)
+### EC2 Server Structure
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Docker Host (EC2)                     │
-├─────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────┐   │
-│  │            whatsapp-receiver container           │   │
-│  │  ┌─────────────┐ ┌──────────┐ ┌──────────────┐  │   │
-│  │  │ /app/wa_    │ │ /app/    │ │ /app/data/   │  │   │
-│  │  │   session   │ │   data   │ │    media     │  │   │
-│  │  └──────┬──────┘ └────┬─────┘ └──────┬───────┘  │   │
-│  └─────────┼─────────────┼──────────────┼──────────┘   │
-│            │             │              │               │
-│  ┌─────────▼─────┐ ┌─────▼─────┐ ┌──────▼──────┐       │
-│  │whatsapp_      │ │whatsapp_  │ │whatsapp_    │       │
-│  │session        │ │data       │ │media        │       │
-│  │(Named Volume) │ │(Named Vol)│ │(Named Vol)  │       │
-│  └───────────────┘ └───────────┘ └─────────────┘       │
-│         ▲                                               │
-│         │                                               │
-│   PERSISTS ACROSS DEPLOYMENTS                          │
-│   (No need to re-scan QR code)                         │
-└─────────────────────────────────────────────────────────┘
+EC2 Instance
+├── Node.js 20.x
+├── PM2 (Process Manager)
+└── ~/whatsapp-app/
+    ├── dist/              # Compiled JavaScript
+    │   └── public/        # Static web files
+    ├── node_modules/      # Dependencies
+    ├── data/              # SQLite database
+    │   └── messages.db
+    ├── wa_session/        # WhatsApp session (persists QR login)
+    ├── logs/              # Application logs
+    ├── .env               # Environment variables
+    └── ecosystem.config.cjs  # PM2 configuration
 ```
 
 ---
@@ -77,8 +68,6 @@ Configure these secrets in your GitHub repository:
 
 | Secret | Description | Example |
 |--------|-------------|---------|
-| `DOCKER_USERNAME` | Docker Hub username | `myusername` |
-| `DOCKER_PASSWORD` | Docker Hub password or access token | `dckr_pat_xxxxx` |
 | `EC2_HOST` | EC2 public IP or hostname | `54.123.45.67` |
 | `EC2_USER` | SSH user for EC2 | `ec2-user` (Amazon Linux) or `ubuntu` |
 | `EC2_SSH_KEY` | Private SSH key (full content) | `-----BEGIN RSA PRIVATE KEY-----...` |
@@ -107,7 +96,6 @@ cat ~/.ssh/your-ec2-key.pem
   Inbound Rules:
   - SSH (22)      → Your IP
   - HTTP (3000)   → 0.0.0.0/0 (or your IP for security)
-  - HTTPS (443)   → 0.0.0.0/0 (if using reverse proxy)
   ```
 
 ### 2. Connect and Run Setup Script
@@ -124,17 +112,14 @@ chmod +x ec2-setup.sh
 ./ec2-setup.sh
 ```
 
-### 3. Log Out and Back In
+The setup script will:
+- Install Node.js 20.x
+- Install PM2 globally
+- Configure PM2 to start on boot
+- Create application directories
+- Create helper scripts
 
-```bash
-# Required for Docker group permissions
-exit
-
-# Reconnect
-ssh -i your-key.pem ec2-user@YOUR_EC2_IP
-```
-
-### 4. Configure Environment Variables
+### 3. Configure Environment Variables
 
 ```bash
 cd ~/whatsapp-app
@@ -145,28 +130,11 @@ nano .env
 # Set your values (see Environment Variables section below)
 ```
 
-### 5. First Deployment
+### 4. First Deployment
 
 The first deployment will be triggered automatically when you push to `main` branch.
 
-Or deploy manually:
-
-```bash
-cd ~/whatsapp-app
-
-# Set your Docker image (replace with your Docker Hub username)
-export DOCKER_IMAGE=yourusername/whatsapp-receiver
-export IMAGE_TAG=latest
-
-# Pull and start
-docker-compose pull
-docker-compose up -d
-
-# Check logs
-docker-compose logs -f
-```
-
-### 6. Scan QR Code
+### 5. Scan QR Code
 
 1. Open in browser: `http://YOUR_EC2_IP:3000`
 2. Scan the QR code with WhatsApp
@@ -176,21 +144,16 @@ docker-compose logs -f
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and configure:
-
-```bash
-cp .env.example .env
-nano .env
-```
+Edit `~/whatsapp-app/.env` on EC2:
 
 ### Required Variables
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `DOCKER_IMAGE` | Docker Hub image name | `myuser/whatsapp-receiver` |
-| `IMAGE_TAG` | Image tag to deploy | `latest` or `v1.0.0` |
+| `PORT` | Server port | `3000` |
+| `NODE_ENV` | Environment | `production` |
 
-### Email Configuration (Optional)
+### Email Configuration
 
 | Variable | Description | Example |
 |----------|-------------|---------|
@@ -208,15 +171,18 @@ nano .env
 | `DAILY_REPORT_HOUR` | Hour to send (0-23) | `8` |
 | `DAILY_REPORT_MINUTE` | Minute to send (0-59) | `0` |
 | `EMAIL_FILTER_NUMBERS` | Phone numbers to include | `573001234567,573009876543` |
-| `TZ` | Timezone for cron | `America/Bogota` |
+| `TZ` | Timezone | `America/Bogota` |
 
 ### Example `.env` File
 
 ```env
-# Docker
-DOCKER_IMAGE=myuser/whatsapp-receiver
-IMAGE_TAG=latest
-APP_PORT=3000
+# Server
+PORT=3000
+NODE_ENV=production
+
+# Paths
+SESSION_PATH=./wa_session
+DATA_PATH=./data
 
 # Email
 EMAIL_PROVIDER=mailersend
@@ -244,22 +210,19 @@ TZ=America/Bogota
 Every push to `main` branch triggers:
 
 1. **Build & Test**: ESLint + TypeScript compilation
-2. **Docker Build**: Creates image with tags `latest` and `sha-xxxxx`
-3. **Deploy to EC2**: Pulls and restarts container
+2. **Deploy to EC2**: Copies files and reloads PM2
 
 ### Manual Deployment (Promote)
 
-To deploy a specific version:
+To deploy a specific version (tag, branch, or commit):
 
 1. Go to **Actions** → **Promote to Production**
 2. Click **Run workflow**
-3. Enter the image tag (e.g., `v1.0.0`, `sha-abc1234`, `latest`)
+3. Enter the git ref (e.g., `v1.0.0`, `main`, `abc1234`)
 4. Type `deploy` to confirm
 5. Click **Run workflow**
 
 ### Creating a Release
-
-To create a versioned release:
 
 ```bash
 # Create and push a tag
@@ -267,172 +230,124 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-This creates a Docker image with tags: `v1.0.0`, `1.0`, and `latest`
-
 ---
 
-## Session Persistence
+## PM2 Commands
 
-### Why It Matters
-
-The WhatsApp session is stored in `/app/wa_session` inside the container. Without persistence, you would need to scan the QR code after every deployment.
-
-### How It Works
-
-We use Docker **named volumes** that persist independently of containers:
-
-```yaml
-volumes:
-  wa_session:
-    name: whatsapp_session  # Persists across deployments
-```
-
-### Safe Operations (Session Preserved)
-
-✅ `docker-compose down` - Stops container, keeps volumes
-✅ `docker-compose up -d` - Starts container, uses existing volumes
-✅ `docker-compose pull` - Updates image, keeps volumes
-✅ Image updates - Volume data persists
-
-### Dangerous Operations (Session Lost)
-
-❌ `docker-compose down -v` - Deletes volumes!
-❌ `docker volume rm whatsapp_session` - Deletes session!
-❌ `docker system prune -a --volumes` - Deletes everything!
-
----
-
-## Manual Operations
-
-### Helper Scripts
-
-After setup, these scripts are available in `~/whatsapp-app/`:
+### Helper Scripts (on EC2)
 
 ```bash
-./deploy.sh   # Pull and restart with latest image
+cd ~/whatsapp-app
+
+./deploy.sh   # Reload the application
 ./logs.sh     # View application logs
-./status.sh   # Check container and volume status
+./status.sh   # Check app status
+./restart.sh  # Restart the app
+./stop.sh     # Stop the app
 ./backup.sh   # Backup database and session
 ```
 
-### View Logs
+### Direct PM2 Commands
 
 ```bash
-cd ~/whatsapp-app
-docker-compose logs -f --tail=100
-```
+# View status
+pm2 status
 
-### Restart Container
+# View logs
+pm2 logs whatsapp-receiver
 
-```bash
-cd ~/whatsapp-app
-docker-compose restart
-```
+# Restart
+pm2 restart whatsapp-receiver
 
-### Update to Latest
+# Stop
+pm2 stop whatsapp-receiver
 
-```bash
-cd ~/whatsapp-app
-docker-compose pull
-docker-compose down
-docker-compose up -d
-```
+# Start
+pm2 start ecosystem.config.cjs
 
-### Deploy Specific Version
+# Save current process list (survives reboot)
+pm2 save
 
-```bash
-cd ~/whatsapp-app
-export IMAGE_TAG=v1.0.0
-docker-compose pull
-docker-compose down
-docker-compose up -d
-```
-
-### Backup Data
-
-```bash
-cd ~/whatsapp-app
-./backup.sh
-```
-
-### Reset Session (Requires QR Scan)
-
-```bash
-cd ~/whatsapp-app
-docker-compose down
-docker volume rm whatsapp_session
-docker-compose up -d
-# Then scan QR code at http://YOUR_IP:3000
+# Monitor resources
+pm2 monit
 ```
 
 ---
 
 ## Troubleshooting
 
-### Container Won't Start
+### Application Won't Start
 
 ```bash
-# Check logs for errors
-docker-compose logs --tail=50
+# Check PM2 logs
+pm2 logs whatsapp-receiver --lines 50
 
-# Check container status
-docker-compose ps
+# Check if port is in use
+sudo lsof -i :3000
+
+# Try starting manually to see errors
+cd ~/whatsapp-app
+node dist/index.js
 ```
 
 ### Session Lost After Deployment
 
+The WhatsApp session is stored in `~/whatsapp-app/wa_session/`. This directory is NOT overwritten during deployments, so sessions should persist.
+
+If you need to reset:
 ```bash
-# Check if volumes exist
-docker volume ls | grep whatsapp
-
-# Should show:
-# whatsapp_session
-# whatsapp_data
-# whatsapp_media
+cd ~/whatsapp-app
+pm2 stop whatsapp-receiver
+rm -rf wa_session/*
+pm2 start whatsapp-receiver
+# Then scan QR code at http://YOUR_IP:3000
 ```
-
-If volumes are missing, the session was deleted. You'll need to scan QR again.
 
 ### Port 3000 Not Accessible
 
 1. Check EC2 Security Group allows inbound on port 3000
-2. Check container is running: `docker-compose ps`
-3. Check no firewall blocking: `sudo iptables -L`
-
-### Docker Permission Denied
-
-```bash
-# Add user to docker group
-sudo usermod -aG docker $USER
-
-# Log out and back in
-exit
-# Reconnect via SSH
-```
+2. Check app is running: `pm2 status`
+3. Check firewall: `sudo iptables -L`
 
 ### Email Not Sending
 
 1. Check `MAILERSEND_API_KEY` is set correctly
 2. Verify sender email is verified in MailerSend
-3. Check logs: `docker-compose logs | grep -i email`
+3. Check logs: `pm2 logs whatsapp-receiver | grep -i email`
 
-### Daily Report Not Working
+### Out of Memory
 
-1. Check `DAILY_REPORT_ENABLED=true`
-2. Check `EMAIL_REPORT_TO` is set
-3. Verify timezone: `TZ=America/Bogota`
-4. Check logs at the scheduled time
+```bash
+# Check memory usage
+pm2 monit
+
+# PM2 auto-restarts if memory exceeds 500MB (configured in ecosystem.config.cjs)
+```
+
+### View All Logs
+
+```bash
+# Application logs
+cat ~/whatsapp-app/logs/out.log
+
+# Error logs
+cat ~/whatsapp-app/logs/error.log
+
+# Or use PM2
+pm2 logs whatsapp-receiver
+```
 
 ---
 
-## Files in This Directory
+## Files Reference
 
 | File | Description |
 |------|-------------|
-| `docker-compose.yml` | Production Docker Compose configuration |
-| `.env.example` | Example environment variables |
-| `ec2-setup.sh` | EC2 initial setup script |
-| `README.md` | This documentation |
+| `ecosystem.config.cjs` | PM2 process configuration |
+| `deploy/ec2-setup.sh` | EC2 initial setup script |
+| `deploy/README.md` | This documentation |
+| `.github/workflows/deploy.yml` | CI/CD pipeline |
+| `.github/workflows/promote.yml` | Manual deployment workflow |
 
 ---
 
@@ -440,5 +355,5 @@ exit
 
 For issues or questions:
 1. Check the [Troubleshooting](#troubleshooting) section
-2. Review application logs: `docker-compose logs`
+2. Review application logs: `pm2 logs whatsapp-receiver`
 3. Open an issue on GitHub
