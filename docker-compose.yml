@@ -1,0 +1,54 @@
+services:
+  whatsapp-receiver:
+    build: .
+    container_name: whatsapp-message-receiver
+    ports:
+      - "3000:3000"
+    volumes:
+      # Persist SQLite database
+      - ./data:/app/data
+      # Persist WhatsApp session
+      - ./wa_session:/app/wa_session
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_PATH=/app/data/messages.db
+      - WA_SESSION_PATH=/app/wa_session
+      # Email configuration
+      - EMAIL_PROVIDER=${EMAIL_PROVIDER:-mailpit}
+      - EMAIL_FROM=${EMAIL_FROM:-noreply@localhost}
+      - EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-WhatsApp Reports}
+      - EMAIL_REPORT_TO=${EMAIL_REPORT_TO:-test@localhost}
+      # MailerSend (production)
+      - MAILERSEND_API_KEY=${MAILERSEND_API_KEY:-}
+      # Mailpit (development/testing)
+      - MAILPIT_URL=http://mailpit:8025
+      # Daily report (optional)
+      - ENABLE_DAILY_REPORT=${ENABLE_DAILY_REPORT:-false}
+      - DAILY_REPORT_HOUR=${DAILY_REPORT_HOUR:-23}
+      - DAILY_REPORT_MINUTE=${DAILY_REPORT_MINUTE:-59}
+    depends_on:
+      - mailpit
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: mailpit
+    ports:
+      - "8025:8025"  # Web UI
+      - "1025:1025"  # SMTP
+    environment:
+      - MP_SMTP_AUTH_ACCEPT_ANY=true
+      - MP_SMTP_AUTH_ALLOW_INSECURE=true
+    restart: unless-stopped

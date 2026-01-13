@@ -1,0 +1,125 @@
+name: Promote to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag to deploy (e.g., v1.0.0, sha-abc1234, latest)'
+        required: true
+        default: 'latest'
+        type: string
+      confirm:
+        description: 'Type "deploy" to confirm deployment'
+        required: true
+        type: string
+
+env:
+  DOCKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/whatsapp-receiver
+
+jobs:
+  # ============================================
+  # Validate and Deploy
+  # ============================================
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate confirmation
+        if: ${{ github.event.inputs.confirm != 'deploy' }}
+        run: |
+          echo "::error::Deployment not confirmed. Please type 'deploy' in the confirm field."
+          exit 1
+
+      - name: Validate image tag
+        run: |
+          if [ -z "${{ github.event.inputs.image_tag }}" ]; then
+            echo "::error::Image tag is required"
+            exit 1
+          fi
+          echo "Deploying tag: ${{ github.event.inputs.image_tag }}"
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Verify image exists
+        run: |
+          echo "Checking if image exists: ${{ env.DOCKER_IMAGE }}:${{ github.event.inputs.image_tag }}"
+          docker manifest inspect ${{ env.DOCKER_IMAGE }}:${{ github.event.inputs.image_tag }} > /dev/null 2>&1 || {
+            echo "::error::Image ${{ env.DOCKER_IMAGE }}:${{ github.event.inputs.image_tag }} not found in Docker Hub"
+            exit 1
+          }
+          echo "Image verified successfully"
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Copy deployment files to EC2
+        run: |
+          scp -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no \
+            deploy/docker-compose.yml \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/whatsapp-app/
+
+      - name: Deploy to EC2
+        run: |
+          ssh -i ~/.ssh/ec2_key -o StrictHostKeyChecking=no \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
+
+          cd /home/${{ secrets.EC2_USER }}/whatsapp-app
+
+          # Login to Docker Hub
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+          # Export variables for docker-compose
+          export DOCKER_IMAGE="${{ env.DOCKER_IMAGE }}"
+          export IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+
+          echo "Deploying $DOCKER_IMAGE:$IMAGE_TAG"
+
+          # Pull the specific image
+          docker pull ${DOCKER_IMAGE}:${IMAGE_TAG}
+
+          # Stop and remove old container (preserving volumes!)
+          docker-compose down --remove-orphans || true
+
+          # Start with new image
+          docker-compose up -d
+
+          # Cleanup old images
+          docker image prune -f
+
+          # Show status
+          echo "=== Deployment Complete ==="
+          docker-compose ps
+          echo ""
+          echo "Deployed version: ${IMAGE_TAG}"
+
+          ENDSSH
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/ec2_key
+
+      - name: Deployment Summary
+        run: |
+          echo "### Promotion Complete :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Tag:** \`${{ github.event.inputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Full Image:** \`${{ env.DOCKER_IMAGE }}:${{ github.event.inputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Host:** \`${{ secrets.EC2_HOST }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Session - WhatsApp</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .session-page {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+      background: var(--bg-color);
+    }
+
+    .session-card {
+      background: white;
+      border-radius: 12px;
+      padding: 32px;
+      max-width: 400px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+
+    .session-card h1 {
+      font-size: 1.5rem;
+      margin-bottom: 8px;
+      color: var(--text-primary);
+    }
+
+    .session-card p {
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+      font-size: 0.9rem;
+    }
+
+    .qr-container {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+
+    .qr-container img {
+      max-width: 200px;
+      width: 100%;
+      border-radius: 8px;
+    }
+
+    .qr-placeholder {
+      width: 200px;
+      height: 200px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+    }
+
+    .status-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 24px;
+      padding: 12px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+
+    .status-icon {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .status-icon.connected { background: var(--primary-color); }
+    .status-icon.disconnected { background: #ef5350; }
+    .status-icon.connecting, .status-icon.qr_ready {
+      background: #ff9800;
+      animation: pulse 1.5s infinite;
+    }
+
+    .btn-reset {
+      background: #ef5350;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font-weight: 500;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: background 0.15s;
+      width: 100%;
+      margin-bottom: 12px;
+    }
+
+    .btn-reset:hover {
+      background: #d32f2f;
+    }
+
+    .btn-reset:disabled {
+      background: #bdbdbd;
+      cursor: not-allowed;
+    }
+
+    .btn-back {
+      display: inline-block;
+      color: var(--primary-color);
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+
+    .btn-back:hover {
+      text-decoration: underline;
+    }
+
+    .connected-message {
+      color: var(--primary-color);
+      font-weight: 500;
+      margin-bottom: 16px;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+  </style>
+</head>
+<body>
+  <div class="session-page">
+    <div class="session-card">
+      <h1>WhatsApp Session</h1>
+      <p>Manage your WhatsApp connection</p>
+
+      <div class="status-container">
+        <span id="status-icon" class="status-icon disconnected"></span>
+        <span id="status-text">Checking status...</span>
+      </div>
+
+      <div id="qr-container" class="qr-container hidden">
+        <img id="qr-image" alt="QR Code" />
+      </div>
+
+      <div id="qr-placeholder" class="qr-container">
+        <div class="qr-placeholder">
+          <span id="placeholder-text">Loading...</span>
+        </div>
+      </div>
+
+      <div id="connected-message" class="connected-message hidden">
+        WhatsApp is connected
+      </div>
+
+      <button id="reset-btn" class="btn-reset">Reset Session</button>
+      <a href="/" class="btn-back">Back to conversations</a>
+    </div>
+  </div>
+
+  <script>
+    const statusIcon = document.getElementById('status-icon');
+    const statusText = document.getElementById('status-text');
+    const qrContainer = document.getElementById('qr-container');
+    const qrImage = document.getElementById('qr-image');
+    const qrPlaceholder = document.getElementById('qr-placeholder');
+    const placeholderText = document.getElementById('placeholder-text');
+    const connectedMessage = document.getElementById('connected-message');
+    const resetBtn = document.getElementById('reset-btn');
+
+    let currentStatus = 'disconnected';
+    let statusInterval = null;
+    let qrInterval = null;
+
+    async function fetchStatus() {
+      try {
+        const response = await fetch('/api/whatsapp/status');
+        const data = await response.json();
+        return data.status;
+      } catch (error) {
+        console.error('Error fetching status:', error);
+        return 'disconnected';
+      }
+    }
+
+    async function fetchQr() {
+      try {
+        const response = await fetch('/api/whatsapp/qr');
+        const data = await response.json();
+        return data.success ? data.qr : null;
+      } catch (error) {
+        console.error('Error fetching QR:', error);
+        return null;
+      }
+    }
+
+    function updateStatus(status) {
+      currentStatus = status;
+      statusIcon.className = `status-icon ${status}`;
+
+      const labels = {
+        disconnected: 'Disconnected',
+        connecting: 'Connecting...',
+        qr_ready: 'Waiting for QR scan',
+        connected: 'Connected',
+      };
+      statusText.textContent = labels[status] || status;
+
+      // Update UI based on status
+      if (status === 'connected') {
+        qrContainer.classList.add('hidden');
+        qrPlaceholder.classList.add('hidden');
+        connectedMessage.classList.remove('hidden');
+        stopQrPolling();
+      } else if (status === 'qr_ready') {
+        connectedMessage.classList.add('hidden');
+        startQrPolling();
+      } else {
+        qrContainer.classList.add('hidden');
+        qrPlaceholder.classList.remove('hidden');
+        connectedMessage.classList.add('hidden');
+        placeholderText.textContent = status === 'connecting' ? 'Connecting...' : 'Waiting for connection...';
+        stopQrPolling();
+      }
+    }
+
+    async function updateQr() {
+      const qr = await fetchQr();
+      if (qr) {
+        qrImage.src = qr;
+        qrContainer.classList.remove('hidden');
+        qrPlaceholder.classList.add('hidden');
+      }
+    }
+
+    function startQrPolling() {
+      if (qrInterval) return;
+      updateQr();
+      qrInterval = setInterval(updateQr, 5000);
+    }
+
+    function stopQrPolling() {
+      if (qrInterval) {
+        clearInterval(qrInterval);
+        qrInterval = null;
+      }
+    }
+
+    async function resetSession() {
+      if (!confirm('Are you sure you want to reset the session? You will need to scan the QR code again.')) {
+        return;
+      }
+
+      resetBtn.disabled = true;
+      resetBtn.textContent = 'Resetting...';
+
+      try {
+        const response = await fetch('/api/whatsapp/reset', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+          // Wait a moment for the reset to take effect
+          setTimeout(async () => {
+            const status = await fetchStatus();
+            updateStatus(status);
+            resetBtn.disabled = false;
+            resetBtn.textContent = 'Reset Session';
+          }, 2000);
+        } else {
+          alert('Error: ' + (data.error || 'Failed to reset session'));
+          resetBtn.disabled = false;
+          resetBtn.textContent = 'Reset Session';
+        }
+      } catch (error) {
+        console.error('Error resetting session:', error);
+        alert('Error resetting session');
+        resetBtn.disabled = false;
+        resetBtn.textContent = 'Reset Session';
+      }
+    }
+
+    resetBtn.addEventListener('click', resetSession);
+
+    // Initialize
+    async function initialize() {
+      const status = await fetchStatus();
+      updateStatus(status);
+
+      // Poll status every 3 seconds
+      statusInterval = setInterval(async () => {
+        const status = await fetchStatus();
+        if (status !== currentStatus) {
+          updateStatus(status);
+        }
+      }, 3000);
+    }
+
+    document.addEventListener('DOMContentLoaded', initialize);
+  </script>
+</body>
+</html>

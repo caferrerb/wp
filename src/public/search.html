@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Search Messages - WhatsApp</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/search.css">
+</head>
+<body>
+  <div class="search-page">
+    <!-- Header -->
+    <header class="search-header">
+      <div class="header-left">
+        <a href="/" class="back-link">← Back</a>
+        <h1>Search Messages</h1>
+      </div>
+      <div id="status-badge" class="status-badge disconnected">
+        <span class="status-dot"></span>
+        <span id="status-text">Disconnected</span>
+      </div>
+    </header>
+
+    <!-- Search Form -->
+    <div class="search-form">
+      <div class="form-row">
+        <div class="form-group contact-autocomplete">
+          <label for="contact-input">Contact</label>
+          <input type="text" id="contact-input" placeholder="Type number to filter..." autocomplete="off" />
+          <input type="hidden" id="contact-value" />
+          <div id="contact-dropdown" class="autocomplete-dropdown hidden"></div>
+        </div>
+        <div class="form-group flex-grow">
+          <label for="search-input">Search text</label>
+          <input type="text" id="search-input" placeholder="Enter search term..." />
+        </div>
+        <div class="form-group">
+          <label for="sort-select">Sort by date</label>
+          <select id="sort-select">
+            <option value="desc">Newest first</option>
+            <option value="asc">Oldest first</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>&nbsp;</label>
+          <button id="search-btn" class="btn btn-primary">Search</button>
+        </div>
+        <div class="form-group">
+          <label>&nbsp;</label>
+          <button id="email-btn" class="btn btn-secondary" disabled>Send Email</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results Info -->
+    <div class="results-info">
+      <span id="results-count">Select a contact or enter a search term</span>
+      <div class="pagination-controls">
+        <button id="prev-btn" class="btn btn-small" disabled>Previous</button>
+        <span id="page-info">Page 1</span>
+        <button id="next-btn" class="btn btn-small" disabled>Next</button>
+      </div>
+    </div>
+
+    <!-- Results Table -->
+    <div id="results-container" class="results-container">
+      <div class="empty-results">
+        <div class="empty-icon">🔍</div>
+        <p>Select a contact to see messages or search across all</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading overlay -->
+  <div id="loading" class="loading hidden">
+    <div class="spinner"></div>
+  </div>
+
+  <script src="/search.js"></script>
+</body>
+</html>

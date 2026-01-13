@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  whatsapp-receiver:
+    image: ${DOCKER_IMAGE}:${IMAGE_TAG:-latest}
+    container_name: whatsapp-receiver
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - WA_SESSION_PATH=/app/wa_session
+      - DB_PATH=/app/data/messages.db
+    volumes:
+      # Named volumes for persistent data
+      # CRITICAL: These volumes preserve the WhatsApp session across deployments
+      # Never use 'docker-compose down -v' unless you want to reset the session
+      - wa_session:/app/wa_session
+      - wa_data:/app/data
+      - wa_media:/app/data/media
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  # Named volumes persist across container restarts and image updates
+  # This ensures the WhatsApp session survives deployments without re-scanning QR
+  wa_session:
+    name: whatsapp_session
+  wa_data:
+    name: whatsapp_data
+  wa_media:
+    name: whatsapp_media

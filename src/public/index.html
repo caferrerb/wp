@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsApp Message Receiver</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar with conversations -->
+    <aside class="sidebar" id="sidebar">
+      <header class="sidebar-header">
+        <h1>WhatsApp</h1>
+        <div id="status-badge" class="status-badge disconnected">
+          <span class="status-dot"></span>
+          <span id="status-text">Disconnected</span>
+        </div>
+      </header>
+
+      <!-- QR Code Section -->
+      <div id="qr-section" class="qr-section hidden">
+        <p>Scan QR code to connect</p>
+        <img id="qr-image" alt="QR Code" />
+      </div>
+
+      <!-- Search -->
+      <div class="search-container">
+        <input type="text" id="search-input" placeholder="Search conversations..." />
+      </div>
+
+      <!-- Filter Section -->
+      <div class="filter-section">
+        <div class="filter-header">
+          <span>Filtrar números</span>
+          <div class="filter-buttons">
+            <button id="filter-toggle" class="btn-filter-toggle">Aplicar filtro</button>
+            <button id="filter-clear" class="btn-filter-clear">Limpiar</button>
+          </div>
+        </div>
+        <div class="filter-input-container">
+          <input type="text" id="filter-input" placeholder="Agregar número..." />
+          <button id="filter-add-btn" class="btn-filter-add">+</button>
+        </div>
+        <div id="filter-list" class="filter-list"></div>
+      </div>
+
+      <!-- Conversations List -->
+      <div id="conversations-list" class="conversations-list">
+        <!-- Conversations will be rendered here -->
+      </div>
+
+      <!-- Actions -->
+      <div class="sidebar-actions">
+        <a href="/search.html" class="btn btn-small">Search</a>
+        <a href="/session.html" class="btn btn-small">Session</a>
+        <button id="export-btn" class="btn btn-small">Export CSV</button>
+      </div>
+    </aside>
+
+    <!-- Main content - Chat view -->
+    <main class="main-content" id="main-content">
+      <!-- Empty state -->
+      <div id="empty-state" class="empty-state">
+        <div class="empty-icon">💬</div>
+        <h2>Select a conversation</h2>
+        <p>Choose a conversation from the sidebar to view messages</p>
+      </div>
+
+      <!-- Chat view -->
+      <div id="chat-view" class="chat-view hidden">
+        <header class="chat-header">
+          <button id="back-btn" class="btn-back">←</button>
+          <div class="chat-info">
+            <h2 id="chat-name">Contact Name</h2>
+            <span id="chat-jid" class="chat-jid"></span>
+          </div>
+          <span id="message-count" class="message-count">0 messages</span>
+        </header>
+
+        <div id="messages-container" class="messages-container">
+          <!-- Messages will be rendered here -->
+        </div>
+
+        <div class="chat-footer">
+          <p class="read-only-notice">Read-only mode - Messages are not marked as read</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Loading overlay -->
+  <div id="loading" class="loading hidden">
+    <div class="spinner"></div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
