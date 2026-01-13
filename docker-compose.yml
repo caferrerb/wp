@@ -23,10 +23,15 @@ services:
       - MAILERSEND_API_KEY=${MAILERSEND_API_KEY:-}
       # Mailpit (development/testing)
       - MAILPIT_URL=http://mailpit:8025
-      # Daily report (optional)
-      - ENABLE_DAILY_REPORT=${ENABLE_DAILY_REPORT:-false}
-      - DAILY_REPORT_HOUR=${DAILY_REPORT_HOUR:-23}
-      - DAILY_REPORT_MINUTE=${DAILY_REPORT_MINUTE:-59}
+      # Daily report
+      - DAILY_REPORT_ENABLED=${DAILY_REPORT_ENABLED:-false}
+      - DAILY_REPORT_HOUR=${DAILY_REPORT_HOUR:-8}
+      - DAILY_REPORT_MINUTE=${DAILY_REPORT_MINUTE:-0}
+      - EMAIL_FILTER_NUMBERS=${EMAIL_FILTER_NUMBERS:-}
+      # WhatsApp commands
+      - COMMAND_NUMBERS=${COMMAND_NUMBERS:-}
+      # Timezone
+      - TZ=${TZ:-America/Bogota}
     depends_on:
       - mailpit
     restart: unless-stopped

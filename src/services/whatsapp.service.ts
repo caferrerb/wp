@@ -265,10 +265,15 @@ export class WhatsAppService {
       console.log(`Message saved: [${extracted.type}] from ${senderName || remoteJid}`);
     }
 
-    // Check for commands (only for text messages, not from me, not from groups)
-    if (this.commandService && extracted.type === 'text' && !msg.key.fromMe && !isGroup) {
-      const commandResult = await this.commandService.executeCommand(extracted.content, remoteJid);
+    // Check for commands (only for text messages, not from groups)
+    // Commands can come from configured numbers, even if fromMe is true (same account)
+    if (this.commandService && extracted.type === 'text' && !isGroup) {
+      // For fromMe messages, use remoteJid as the "sender" to check command permissions
+      // For received messages, the sender is already remoteJid
+      const senderNumber = remoteJid;
+      const commandResult = await this.commandService.executeCommand(extracted.content, senderNumber);
       if (commandResult && commandResult.shouldReply) {
+        // Reply to the conversation (remoteJid)
         await this.sendTextMessage(remoteJid, commandResult.message);
       }
     }
