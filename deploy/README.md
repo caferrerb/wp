@@ -175,6 +175,23 @@ Edit `~/whatsapp-app/.env` on EC2:
 | `EMAIL_FILTER_NUMBERS` | Phone numbers to include | `573001234567,573009876543` |
 | `TZ` | Timezone | `America/Bogota` |
 
+### WhatsApp Commands Configuration
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `COMMAND_NUMBERS` | Phone numbers that can send commands | `573001234567,573009876543` |
+
+#### Available Commands
+
+Send these messages from an authorized phone number:
+
+| Command | Description |
+|---------|-------------|
+| `state` (or `status`, `estado`) | Sends health check email with system status |
+| `csv` (or `mail-csv`) | Sends CSV with messages from supervised contacts |
+| `qr` | Resets session and sends QR code by email |
+| `help` (or `ayuda`) | Shows available commands |
+
 ### Example `.env` File
 
 ```env
@@ -201,6 +218,9 @@ EMAIL_FILTER_NUMBERS=573001234567,573009876543
 
 # Timezone
 TZ=America/Bogota
+
+# WhatsApp Commands
+COMMAND_NUMBERS=573001234567
 ```
 
 ---

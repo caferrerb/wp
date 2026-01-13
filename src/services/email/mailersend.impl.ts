@@ -30,10 +30,16 @@ export class MailerSendEmailService implements IEmailService {
         ? params.attachment.content.toString('base64')
         : params.attachment.content;
 
-      const attachments = [
-        new Attachment(content, params.attachment.filename, 'attachment'),
-      ];
-      emailParams.setAttachments(attachments);
+      // Use 'inline' disposition if cid is provided (for embedded images)
+      const disposition = params.attachment.cid ? 'inline' : 'attachment';
+      const attachment = new Attachment(content, params.attachment.filename, disposition);
+
+      // Set content ID for inline attachments
+      if (params.attachment.cid) {
+        (attachment as any).id = params.attachment.cid;
+      }
+
+      emailParams.setAttachments([attachment]);
     }
 
     await this.mailerSend.email.send(emailParams);

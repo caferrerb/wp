@@ -13,6 +13,7 @@ import { Boom } from '@hapi/boom';
 import * as QRCode from 'qrcode';
 import { config } from '../config/env.js';
 import { MessageService, CreateMessageParams } from './message.service.js';
+import { CommandService } from './command.service.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -35,6 +36,7 @@ export class WhatsAppService {
   private qrCode: string | null = null;
   private status: ConnectionStatus = 'disconnected';
   private messageService: MessageService;
+  private commandService: CommandService | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private mediaPath: string;
@@ -47,6 +49,13 @@ export class WhatsAppService {
     if (!fs.existsSync(this.mediaPath)) {
       fs.mkdirSync(this.mediaPath, { recursive: true });
     }
+  }
+
+  /**
+   * Set the command service (called after initialization to avoid circular deps)
+   */
+  setCommandService(commandService: CommandService): void {
+    this.commandService = commandService;
   }
 
   getStatus(): ConnectionStatus {
@@ -254,6 +263,31 @@ export class WhatsAppService {
     const savedMessage = this.messageService.createMessage(messageParams);
     if (savedMessage) {
       console.log(`Message saved: [${extracted.type}] from ${senderName || remoteJid}`);
+    }
+
+    // Check for commands (only for text messages, not from me, not from groups)
+    if (this.commandService && extracted.type === 'text' && !msg.key.fromMe && !isGroup) {
+      const commandResult = await this.commandService.executeCommand(extracted.content, remoteJid);
+      if (commandResult && commandResult.shouldReply) {
+        await this.sendTextMessage(remoteJid, commandResult.message);
+      }
+    }
+  }
+
+  /**
+   * Send a text message to a JID
+   */
+  async sendTextMessage(jid: string, text: string): Promise<void> {
+    if (!this.socket) {
+      console.error('[WA] Cannot send message: socket not connected');
+      return;
+    }
+
+    try {
+      await this.socket.sendMessage(jid, { text });
+      console.log(`[WA] Reply sent to ${jid}`);
+    } catch (error) {
+      console.error('[WA] Error sending message:', error);
     }
   }
 

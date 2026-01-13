@@ -8,6 +8,7 @@ import { closeDatabase } from './database/connection.js';
 import { MessageService } from './services/message.service.js';
 import { ExportService } from './services/export.service.js';
 import { WhatsAppService } from './services/whatsapp.service.js';
+import { CommandService } from './services/command.service.js';
 import { createEmailService } from './services/email/email.factory.js';
 import { MessageController } from './api/controllers/message.controller.js';
 import { createRouter } from './api/routes.js';
@@ -31,6 +32,24 @@ async function main(): Promise<void> {
 
   // Initialize email service (transparent - uses factory based on config)
   const emailService = createEmailService();
+
+  // Initialize command service (for WhatsApp commands)
+  const commandService = new CommandService(
+    emailService,
+    exportService,
+    messageService,
+    {
+      getQrCodeDataUrl: () => whatsAppService.getQrCodeDataUrl(),
+      getStatus: () => whatsAppService.getStatus(),
+      resetSession: () => whatsAppService.resetSession(),
+    }
+  );
+  whatsAppService.setCommandService(commandService);
+
+  // Log command numbers if configured
+  if (config.commands.allowedNumbers.length > 0) {
+    console.log(`Command numbers: ${config.commands.allowedNumbers.join(', ')}`);
+  }
 
   // Initialize Express app
   const app = express();

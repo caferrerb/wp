@@ -2,6 +2,7 @@ export interface EmailAttachment {
   filename: string;
   content: Buffer | string; // Buffer or base64 string
   contentType?: string;
+  cid?: string; // Content-ID for inline attachments (e.g., images in HTML)
 }
 
 export interface SendEmailParams {

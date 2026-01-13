@@ -32,6 +32,14 @@ export const config = {
       .map(n => n.trim())
       .filter(n => n.length > 0),
   },
+
+  commands: {
+    // Phone numbers that can send commands (without @s.whatsapp.net)
+    allowedNumbers: (process.env.COMMAND_NUMBERS || '')
+      .split(',')
+      .map(n => n.trim())
+      .filter(n => n.length > 0),
+  },
 };
 
 export function validateConfig(): void {
