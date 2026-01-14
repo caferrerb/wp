@@ -209,6 +209,92 @@ export class WhatsAppService {
         await this.processMessage(msg);
       }
     });
+
+    // Handle incoming calls
+    this.socket.ev.on('call', async (calls) => {
+      for (const call of calls) {
+        console.log(`[WA] Call event: id=${call.id}, from=${call.from}, status=${call.status}, isVideo=${call.isVideo}`);
+        await this.processCall(call);
+      }
+    });
+  }
+
+  private ongoingCalls: Map<string, { startTime: number; from: string; isVideo: boolean }> = new Map();
+
+  private async processCall(call: { id: string; from: string; status: string; isVideo?: boolean; isGroup?: boolean; offline?: boolean }): Promise<void> {
+    const remoteJid = call.from;
+    const isVideo = call.isVideo || false;
+    const callType = isVideo ? 'video_call' : 'call';
+    const callTypeLabel = isVideo ? 'Video call' : 'Call';
+    const timestamp = Math.floor(Date.now() / 1000);
+
+    // Track call states to calculate duration
+    if (call.status === 'offer' || call.status === 'ringing') {
+      // Incoming call started
+      this.ongoingCalls.set(call.id, { startTime: timestamp, from: remoteJid, isVideo });
+
+      const messageParams: CreateMessageParams = {
+        remote_jid: remoteJid,
+        sender_name: '',
+        message_id: `call_${call.id}_start`,
+        message_type: callType,
+        content: `[${callTypeLabel} - Incoming]`,
+        timestamp,
+        is_group: call.isGroup || false,
+        is_from_me: false,
+      };
+
+      const saved = this.messageService.createMessage(messageParams);
+      if (saved) {
+        console.log(`[WA] Call logged: ${callTypeLabel} from ${remoteJid}`);
+      }
+    } else if (call.status === 'accept') {
+      // Call accepted - update start time for duration calculation
+      const ongoing = this.ongoingCalls.get(call.id);
+      if (ongoing) {
+        ongoing.startTime = timestamp;
+      }
+    } else if (call.status === 'timeout' || call.status === 'reject' || call.status === 'terminate') {
+      // Call ended
+      const ongoing = this.ongoingCalls.get(call.id);
+      let content: string;
+
+      if (call.status === 'timeout') {
+        content = `[${callTypeLabel} - Missed]`;
+      } else if (call.status === 'reject') {
+        content = `[${callTypeLabel} - Rejected]`;
+      } else if (ongoing) {
+        // Calculate duration
+        const durationSeconds = timestamp - ongoing.startTime;
+        const minutes = Math.floor(durationSeconds / 60);
+        const seconds = durationSeconds % 60;
+        const durationStr = minutes > 0
+          ? `${minutes}m ${seconds}s`
+          : `${seconds}s`;
+        content = `[${callTypeLabel} - ${durationStr}]`;
+      } else {
+        content = `[${callTypeLabel} - Ended]`;
+      }
+
+      // Update the original call message with final status
+      const messageParams: CreateMessageParams = {
+        remote_jid: remoteJid,
+        sender_name: '',
+        message_id: `call_${call.id}_end`,
+        message_type: callType,
+        content,
+        timestamp,
+        is_group: call.isGroup || false,
+        is_from_me: false,
+      };
+
+      const saved = this.messageService.createMessage(messageParams);
+      if (saved) {
+        console.log(`[WA] Call ended: ${content} from ${remoteJid}`);
+      }
+
+      this.ongoingCalls.delete(call.id);
+    }
   }
 
   private async processMessage(msg: proto.IWebMessageInfo): Promise<void> {
