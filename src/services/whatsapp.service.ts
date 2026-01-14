@@ -618,7 +618,8 @@ export class WhatsAppService {
 
   async disconnect(): Promise<void> {
     if (this.socket) {
-      await this.socket.logout();
+      // Use end() instead of logout() to preserve session
+      this.socket.end(undefined);
       this.socket = null;
       this.status = 'disconnected';
       this.qrCode = null;
