@@ -121,23 +121,29 @@ export class WhatsAppService {
       }
 
       if (connection === 'close') {
-        const shouldReconnect =
-          (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+        const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
+        const errorMessage = (lastDisconnect?.error as Boom)?.output?.payload?.message || 'Unknown reason';
 
-        console.log(
-          'Connection closed due to:',
-          (lastDisconnect?.error as Boom)?.output?.payload?.message || 'Unknown reason'
-        );
+        console.log(`Connection closed: statusCode=${statusCode}, reason=${errorMessage}`);
 
         this.status = 'disconnected';
         this.qrCode = null;
 
-        if (shouldReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
+        // Only stop reconnecting if explicitly logged out (401)
+        const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+
+        if (!isLoggedOut && this.reconnectAttempts < this.maxReconnectAttempts) {
           this.reconnectAttempts++;
-          console.log(`Reconnecting... Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
-          setTimeout(() => this.connect(), 5000);
-        } else if (!shouldReconnect) {
-          console.log('Logged out. Please delete the session folder and restart.');
+          const delay = Math.min(5000 * this.reconnectAttempts, 30000); // Exponential backoff, max 30s
+          console.log(`Reconnecting in ${delay/1000}s... Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
+          setTimeout(() => this.connect(), delay);
+        } else if (isLoggedOut) {
+          console.log('Session logged out by WhatsApp. Please scan QR code again.');
+          console.log('Visit http://localhost:3000 or send "qr" command to reset session.');
+        } else {
+          console.log(`Max reconnect attempts (${this.maxReconnectAttempts}) reached. Restarting connection...`);
+          this.reconnectAttempts = 0;
+          setTimeout(() => this.connect(), 60000); // Wait 1 minute before full restart
         }
       } else if (connection === 'open') {
         this.status = 'connected';
