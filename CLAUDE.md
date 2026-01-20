@@ -125,3 +125,20 @@ GitHub Secrets required:
 ### Session lost
 - Session persists in `wa_session/` directory
 - Clear it only if you need a new QR code
+
+## Git Repository
+
+**Remote**: https://github.com/caferrerb/wp
+
+### Verify Changes After Push
+Always verify commits are published using GitHub CLI:
+```bash
+# Check latest commit on main
+gh api repos/caferrerb/wp/commits/main --jq '{sha: .sha[0:7], message: .commit.message | split("\n")[0], date: .commit.author.date}'
+
+# Check last push time
+gh repo view caferrerb/wp --json pushedAt,defaultBranchRef --jq '.defaultBranchRef.name + " - Last push: " + .pushedAt'
+
+# View recent commits
+gh api repos/caferrerb/wp/commits --jq '.[:3][] | {sha: .sha[0:7], message: .commit.message | split("\n")[0]}'
+```
