@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Error Log - WhatsApp Message Receiver</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .errors-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .errors-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .errors-header h1 {
+      margin: 0;
+      color: #1a1a2e;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .filters-section {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: flex;
+      gap: 15px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .filter-group label {
+      font-size: 12px;
+      color: #666;
+      font-weight: 500;
+    }
+
+    .filter-group select,
+    .filter-group input {
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    .errors-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .errors-table th,
+    .errors-table td {
+      padding: 12px 15px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+    }
+
+    .errors-table th {
+      background: #1a1a2e;
+      color: white;
+      font-weight: 500;
+      font-size: 13px;
+    }
+
+    .errors-table tr:hover {
+      background: #f8f9fa;
+    }
+
+    .error-type-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #dc3545;
+      color: white;
+    }
+
+    .error-type-badge.warning {
+      background: #ffc107;
+      color: #000;
+    }
+
+    .error-message {
+      max-width: 400px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .error-location {
+      font-family: monospace;
+      font-size: 12px;
+      color: #666;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .error-time {
+      font-size: 13px;
+      color: #666;
+      white-space: nowrap;
+    }
+
+    .error-row {
+      cursor: pointer;
+    }
+
+    .error-details {
+      display: none;
+      background: #f8f9fa;
+    }
+
+    .error-details.expanded {
+      display: table-row;
+    }
+
+    .error-details-content {
+      padding: 15px;
+    }
+
+    .error-stack {
+      background: #1a1a2e;
+      color: #fff;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .error-context {
+      background: #e9ecef;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin-top: 10px;
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .pagination button {
+      padding: 8px 16px;
+      border: 1px solid #ddd;
+      background: white;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .pagination button:hover:not(:disabled) {
+      background: #f8f9fa;
+    }
+
+    .pagination button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .pagination-info {
+      font-size: 14px;
+      color: #666;
+    }
+
+    .no-errors {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+
+    .stats-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .stat-card {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .stat-card h3 {
+      margin: 0 0 5px 0;
+      font-size: 14px;
+      color: #666;
+    }
+
+    .stat-card .value {
+      font-size: 28px;
+      font-weight: 600;
+      color: #1a1a2e;
+    }
+
+    .stat-card .value.error {
+      color: #dc3545;
+    }
+  </style>
+</head>
+<body>
+  <div class="errors-container">
+    <div class="errors-header">
+      <h1>Error Log</h1>
+      <div class="header-actions">
+        <a href="/" class="btn">Back to Messages</a>
+        <button id="refresh-btn" class="btn">Refresh</button>
+      </div>
+    </div>
+
+    <div class="stats-cards">
+      <div class="stat-card">
+        <h3>Total Errors</h3>
+        <div class="value" id="total-errors">0</div>
+      </div>
+      <div class="stat-card">
+        <h3>Errors Today</h3>
+        <div class="value error" id="errors-today">0</div>
+      </div>
+      <div class="stat-card">
+        <h3>Error Types</h3>
+        <div class="value" id="error-types-count">0</div>
+      </div>
+    </div>
+
+    <div class="filters-section">
+      <div class="filter-group">
+        <label>Error Type</label>
+        <select id="filter-type">
+          <option value="">All Types</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>From Date</label>
+        <input type="date" id="filter-from">
+      </div>
+      <div class="filter-group">
+        <label>To Date</label>
+        <input type="date" id="filter-to">
+      </div>
+      <button id="apply-filters" class="btn">Apply Filters</button>
+      <button id="clear-filters" class="btn btn-secondary">Clear</button>
+    </div>
+
+    <table class="errors-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Time</th>
+          <th>Type</th>
+          <th>Message</th>
+          <th>Location</th>
+        </tr>
+      </thead>
+      <tbody id="errors-body">
+        <tr>
+          <td colspan="5" class="no-errors">Loading errors...</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      <button id="prev-page" disabled>Previous</button>
+      <span class="pagination-info" id="pagination-info">Page 1 of 1</span>
+      <button id="next-page" disabled>Next</button>
+    </div>
+  </div>
+
+  <script>
+    // State
+    let currentPage = 1;
+    let totalPages = 1;
+    let totalErrors = 0;
+    let expandedRow = null;
+
+    // DOM Elements
+    const errorsBody = document.getElementById('errors-body');
+    const filterType = document.getElementById('filter-type');
+    const filterFrom = document.getElementById('filter-from');
+    const filterTo = document.getElementById('filter-to');
+    const applyFiltersBtn = document.getElementById('apply-filters');
+    const clearFiltersBtn = document.getElementById('clear-filters');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const prevPageBtn = document.getElementById('prev-page');
+    const nextPageBtn = document.getElementById('next-page');
+    const paginationInfo = document.getElementById('pagination-info');
+    const totalErrorsEl = document.getElementById('total-errors');
+    const errorsTodayEl = document.getElementById('errors-today');
+    const errorTypesCountEl = document.getElementById('error-types-count');
+
+    // API Functions
+    async function fetchErrors(page = 1) {
+      const params = new URLSearchParams({ page: page.toString(), limit: '50' });
+
+      if (filterType.value) {
+        params.append('error_type', filterType.value);
+      }
+      if (filterFrom.value) {
+        params.append('from', filterFrom.value);
+      }
+      if (filterTo.value) {
+        params.append('to', filterTo.value);
+      }
+
+      try {
+        const response = await fetch(`/api/errors?${params}`);
+        const data = await response.json();
+        return data.success ? data : { data: [], pagination: { total: 0, totalPages: 1, page: 1 } };
+      } catch (error) {
+        console.error('Error fetching errors:', error);
+        return { data: [], pagination: { total: 0, totalPages: 1, page: 1 } };
+      }
+    }
+
+    async function fetchErrorTypes() {
+      try {
+        const response = await fetch('/api/errors/types');
+        const data = await response.json();
+        return data.success ? data.data : [];
+      } catch (error) {
+        console.error('Error fetching error types:', error);
+        return [];
+      }
+    }
+
+    async function fetchErrorsToday() {
+      try {
+        const response = await fetch('/api/errors/today');
+        const data = await response.json();
+        return data.success ? data.count : 0;
+      } catch (error) {
+        console.error('Error fetching today errors:', error);
+        return 0;
+      }
+    }
+
+    // Render Functions
+    function formatDateTime(dateStr) {
+      const date = new Date(dateStr);
+      return date.toLocaleString('es-CO', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function renderErrors(errors) {
+      if (errors.length === 0) {
+        errorsBody.innerHTML = '<tr><td colspan="5" class="no-errors">No errors found</td></tr>';
+        return;
+      }
+
+      errorsBody.innerHTML = errors.map(err => `
+        <tr class="error-row" data-id="${err.id}">
+          <td>${err.id}</td>
+          <td class="error-time">${formatDateTime(err.created_at)}</td>
+          <td><span class="error-type-badge">${escapeHtml(err.error_type)}</span></td>
+          <td class="error-message" title="${escapeHtml(err.error_message)}">${escapeHtml(err.error_message)}</td>
+          <td class="error-location" title="${escapeHtml(err.location || '')}">${escapeHtml(err.location || '-')}</td>
+        </tr>
+        <tr class="error-details" data-details-id="${err.id}">
+          <td colspan="5">
+            <div class="error-details-content">
+              <strong>Full Message:</strong>
+              <p>${escapeHtml(err.error_message)}</p>
+              ${err.error_stack ? `<strong>Stack Trace:</strong><pre class="error-stack">${escapeHtml(err.error_stack)}</pre>` : ''}
+              ${err.context ? `<strong>Context:</strong><pre class="error-context">${escapeHtml(err.context)}</pre>` : ''}
+            </div>
+          </td>
+        </tr>
+      `).join('');
+
+      // Add click handlers for expanding rows
+      document.querySelectorAll('.error-row').forEach(row => {
+        row.addEventListener('click', () => {
+          const id = row.dataset.id;
+          const detailsRow = document.querySelector(`[data-details-id="${id}"]`);
+
+          // Close previously expanded row
+          if (expandedRow && expandedRow !== detailsRow) {
+            expandedRow.classList.remove('expanded');
+          }
+
+          // Toggle current row
+          detailsRow.classList.toggle('expanded');
+          expandedRow = detailsRow.classList.contains('expanded') ? detailsRow : null;
+        });
+      });
+    }
+
+    function updatePagination() {
+      paginationInfo.textContent = `Page ${currentPage} of ${totalPages} (${totalErrors} total)`;
+      prevPageBtn.disabled = currentPage <= 1;
+      nextPageBtn.disabled = currentPage >= totalPages;
+    }
+
+    async function loadErrorTypes() {
+      const types = await fetchErrorTypes();
+      filterType.innerHTML = '<option value="">All Types</option>' +
+        types.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+      errorTypesCountEl.textContent = types.length;
+    }
+
+    async function loadErrors() {
+      const result = await fetchErrors(currentPage);
+      renderErrors(result.data);
+      totalErrors = result.pagination.total;
+      totalPages = result.pagination.totalPages;
+      currentPage = result.pagination.page;
+      totalErrorsEl.textContent = totalErrors;
+      updatePagination();
+    }
+
+    async function loadStats() {
+      const todayCount = await fetchErrorsToday();
+      errorsTodayEl.textContent = todayCount;
+    }
+
+    async function initialize() {
+      await Promise.all([loadErrorTypes(), loadErrors(), loadStats()]);
+    }
+
+    // Event Listeners
+    applyFiltersBtn.addEventListener('click', () => {
+      currentPage = 1;
+      loadErrors();
+    });
+
+    clearFiltersBtn.addEventListener('click', () => {
+      filterType.value = '';
+      filterFrom.value = '';
+      filterTo.value = '';
+      currentPage = 1;
+      loadErrors();
+    });
+
+    refreshBtn.addEventListener('click', () => {
+      initialize();
+    });
+
+    prevPageBtn.addEventListener('click', () => {
+      if (currentPage > 1) {
+        currentPage--;
+        loadErrors();
+      }
+    });
+
+    nextPageBtn.addEventListener('click', () => {
+      if (currentPage < totalPages) {
+        currentPage++;
+        loadErrors();
+      }
+    });
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', initialize);
+  </script>
+</body>
+</html>

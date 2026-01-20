@@ -8,6 +8,7 @@ export const config = {
 
   whatsapp: {
     sessionPath: process.env.WA_SESSION_PATH || './wa_session',
+    storeStatusMessages: process.env.STORE_STATUS_MESSAGES === 'true', // Default: false
   },
 
   database: {

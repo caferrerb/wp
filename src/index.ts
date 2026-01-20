@@ -11,7 +11,11 @@ import { WhatsAppService } from './services/whatsapp.service.js';
 import { CommandService } from './services/command.service.js';
 import { createEmailService } from './services/email/email.factory.js';
 import { MessageController } from './api/controllers/message.controller.js';
+import { ErrorController } from './api/controllers/error.controller.js';
+import { EventController } from './api/controllers/event.controller.js';
 import { createRouter } from './api/routes.js';
+import { ErrorService, errorService } from './services/error.service.js';
+import { eventService } from './services/event.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -68,7 +72,9 @@ async function main(): Promise<void> {
     whatsAppService,
     emailService
   );
-  app.use('/api', createRouter(controller));
+  const errorController = new ErrorController(errorService);
+  const eventController = new EventController(eventService);
+  app.use('/api', createRouter(controller, errorController, eventController));
 
   // Serve index.html for root
   app.get('/', (_req, res) => {
@@ -125,6 +131,10 @@ async function main(): Promise<void> {
         console.log('Daily report sent successfully');
       } catch (error) {
         console.error('Error sending daily report:', error);
+        errorService.logFromException(error, 'index.ts:dailyReportCron', {
+          recipient: config.email.reportTo,
+          filterNumbers: config.dailyReport.filterNumbers,
+        });
       }
     });
   }

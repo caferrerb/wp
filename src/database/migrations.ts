@@ -41,5 +41,37 @@ export function runMigrations(): void {
     // Column already exists
   }
 
+  // Create errors table for logging application errors
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS errors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      error_type TEXT NOT NULL,
+      error_message TEXT NOT NULL,
+      error_stack TEXT,
+      location TEXT,
+      context TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_errors_created_at ON errors(created_at);
+    CREATE INDEX IF NOT EXISTS idx_errors_error_type ON errors(error_type);
+  `);
+
+  // Create events table for tracking WhatsApp events (deletes, etc.)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_type TEXT NOT NULL,
+      remote_jid TEXT,
+      message_id TEXT,
+      details TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
+    CREATE INDEX IF NOT EXISTS idx_events_event_type ON events(event_type);
+    CREATE INDEX IF NOT EXISTS idx_events_remote_jid ON events(remote_jid);
+  `);
+
   console.log('Database migrations completed');
 }

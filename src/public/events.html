@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Events - WhatsApp Message Receiver</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .events-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .events-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .events-header h1 {
+      margin: 0;
+      color: #1a1a2e;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .filters-section {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: flex;
+      gap: 15px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .filter-group label {
+      font-size: 12px;
+      color: #666;
+      font-weight: 500;
+    }
+
+    .filter-group select,
+    .filter-group input {
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    .events-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .events-table th,
+    .events-table td {
+      padding: 12px 15px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+    }
+
+    .events-table th {
+      background: #1a1a2e;
+      color: white;
+      font-weight: 500;
+      font-size: 13px;
+    }
+
+    .events-table tr:hover {
+      background: #f8f9fa;
+    }
+
+    .event-type-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .event-type-badge.message_delete {
+      background: #ffc107;
+      color: #000;
+    }
+
+    .event-type-badge.chat_delete {
+      background: #dc3545;
+      color: white;
+    }
+
+    .event-type-badge.chat_clear {
+      background: #fd7e14;
+      color: white;
+    }
+
+    .event-jid {
+      font-family: monospace;
+      font-size: 12px;
+      color: #666;
+      max-width: 250px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .event-message-id {
+      font-family: monospace;
+      font-size: 11px;
+      color: #999;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .event-time {
+      font-size: 13px;
+      color: #666;
+      white-space: nowrap;
+    }
+
+    .event-row {
+      cursor: pointer;
+    }
+
+    .event-details {
+      display: none;
+      background: #f8f9fa;
+    }
+
+    .event-details.expanded {
+      display: table-row;
+    }
+
+    .event-details-content {
+      padding: 15px;
+    }
+
+    .event-details-json {
+      background: #1a1a2e;
+      color: #fff;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .pagination button {
+      padding: 8px 16px;
+      border: 1px solid #ddd;
+      background: white;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .pagination button:hover:not(:disabled) {
+      background: #f8f9fa;
+    }
+
+    .pagination button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .pagination-info {
+      font-size: 14px;
+      color: #666;
+    }
+
+    .no-events {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+
+    .stats-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .stat-card {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .stat-card h3 {
+      margin: 0 0 5px 0;
+      font-size: 14px;
+      color: #666;
+    }
+
+    .stat-card .value {
+      font-size: 28px;
+      font-weight: 600;
+      color: #1a1a2e;
+    }
+
+    .stat-card .value.warning {
+      color: #ffc107;
+    }
+
+    .event-type-label {
+      text-transform: capitalize;
+    }
+  </style>
+</head>
+<body>
+  <div class="events-container">
+    <div class="events-header">
+      <h1>WhatsApp Events</h1>
+      <div class="header-actions">
+        <a href="/" class="btn">Back to Messages</a>
+        <a href="/errors.html" class="btn">Errors</a>
+        <button id="refresh-btn" class="btn">Refresh</button>
+      </div>
+    </div>
+
+    <div class="stats-cards">
+      <div class="stat-card">
+        <h3>Total Events</h3>
+        <div class="value" id="total-events">0</div>
+      </div>
+      <div class="stat-card">
+        <h3>Events Today</h3>
+        <div class="value warning" id="events-today">0</div>
+      </div>
+      <div class="stat-card">
+        <h3>Event Types</h3>
+        <div class="value" id="event-types-count">0</div>
+      </div>
+    </div>
+
+    <div class="filters-section">
+      <div class="filter-group">
+        <label>Event Type</label>
+        <select id="filter-type">
+          <option value="">All Types</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Chat (JID)</label>
+        <input type="text" id="filter-jid" placeholder="e.g. 573001234567">
+      </div>
+      <div class="filter-group">
+        <label>From Date</label>
+        <input type="date" id="filter-from">
+      </div>
+      <div class="filter-group">
+        <label>To Date</label>
+        <input type="date" id="filter-to">
+      </div>
+      <button id="apply-filters" class="btn">Apply Filters</button>
+      <button id="clear-filters" class="btn btn-secondary">Clear</button>
+    </div>
+
+    <table class="events-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Time</th>
+          <th>Type</th>
+          <th>Chat</th>
+          <th>Message ID</th>
+        </tr>
+      </thead>
+      <tbody id="events-body">
+        <tr>
+          <td colspan="5" class="no-events">Loading events...</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      <button id="prev-page" disabled>Previous</button>
+      <span class="pagination-info" id="pagination-info">Page 1 of 1</span>
+      <button id="next-page" disabled>Next</button>
+    </div>
+  </div>
+
+  <script>
+    // State
+    let currentPage = 1;
+    let totalPages = 1;
+    let totalEvents = 0;
+    let expandedRow = null;
+
+    // DOM Elements
+    const eventsBody = document.getElementById('events-body');
+    const filterType = document.getElementById('filter-type');
+    const filterJid = document.getElementById('filter-jid');
+    const filterFrom = document.getElementById('filter-from');
+    const filterTo = document.getElementById('filter-to');
+    const applyFiltersBtn = document.getElementById('apply-filters');
+    const clearFiltersBtn = document.getElementById('clear-filters');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const prevPageBtn = document.getElementById('prev-page');
+    const nextPageBtn = document.getElementById('next-page');
+    const paginationInfo = document.getElementById('pagination-info');
+    const totalEventsEl = document.getElementById('total-events');
+    const eventsTodayEl = document.getElementById('events-today');
+    const eventTypesCountEl = document.getElementById('event-types-count');
+
+    // API Functions
+    async function fetchEvents(page = 1) {
+      const params = new URLSearchParams({ page: page.toString(), limit: '50' });
+
+      if (filterType.value) {
+        params.append('event_type', filterType.value);
+      }
+      if (filterJid.value) {
+        const jid = filterJid.value.includes('@') ? filterJid.value : `${filterJid.value}@s.whatsapp.net`;
+        params.append('remote_jid', jid);
+      }
+      if (filterFrom.value) {
+        params.append('from', filterFrom.value);
+      }
+      if (filterTo.value) {
+        params.append('to', filterTo.value);
+      }
+
+      try {
+        const response = await fetch(`/api/events?${params}`);
+        const data = await response.json();
+        return data.success ? data : { data: [], pagination: { total: 0, totalPages: 1, page: 1 } };
+      } catch (error) {
+        console.error('Error fetching events:', error);
+        return { data: [], pagination: { total: 0, totalPages: 1, page: 1 } };
+      }
+    }
+
+    async function fetchEventTypes() {
+      try {
+        const response = await fetch('/api/events/types');
+        const data = await response.json();
+        return data.success ? data.data : [];
+      } catch (error) {
+        console.error('Error fetching event types:', error);
+        return [];
+      }
+    }
+
+    async function fetchEventsToday() {
+      try {
+        const response = await fetch('/api/events/today');
+        const data = await response.json();
+        return data.success ? data.count : 0;
+      } catch (error) {
+        console.error('Error fetching today events:', error);
+        return 0;
+      }
+    }
+
+    // Render Functions
+    function formatDateTime(dateStr) {
+      const date = new Date(dateStr);
+      return date.toLocaleString('es-CO', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+    }
+
+    function formatJid(jid) {
+      if (!jid) return '-';
+      return jid.split('@')[0];
+    }
+
+    function formatEventType(type) {
+      const labels = {
+        'message_delete': 'Message Deleted',
+        'chat_delete': 'Chat Deleted',
+        'chat_clear': 'Chat Cleared',
+      };
+      return labels[type] || type;
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function renderEvents(events) {
+      if (events.length === 0) {
+        eventsBody.innerHTML = '<tr><td colspan="5" class="no-events">No events found</td></tr>';
+        return;
+      }
+
+      eventsBody.innerHTML = events.map(evt => `
+        <tr class="event-row" data-id="${evt.id}">
+          <td>${evt.id}</td>
+          <td class="event-time">${formatDateTime(evt.created_at)}</td>
+          <td><span class="event-type-badge ${evt.event_type}">${formatEventType(evt.event_type)}</span></td>
+          <td class="event-jid" title="${escapeHtml(evt.remote_jid || '')}">${formatJid(evt.remote_jid)}</td>
+          <td class="event-message-id" title="${escapeHtml(evt.message_id || '')}">${escapeHtml(evt.message_id || '-')}</td>
+        </tr>
+        <tr class="event-details" data-details-id="${evt.id}">
+          <td colspan="5">
+            <div class="event-details-content">
+              <strong>Full JID:</strong> ${escapeHtml(evt.remote_jid || 'N/A')}<br>
+              <strong>Message ID:</strong> ${escapeHtml(evt.message_id || 'N/A')}<br>
+              ${evt.details ? `<strong>Details:</strong><pre class="event-details-json">${escapeHtml(evt.details)}</pre>` : ''}
+            </div>
+          </td>
+        </tr>
+      `).join('');
+
+      // Add click handlers for expanding rows
+      document.querySelectorAll('.event-row').forEach(row => {
+        row.addEventListener('click', () => {
+          const id = row.dataset.id;
+          const detailsRow = document.querySelector(`[data-details-id="${id}"]`);
+
+          if (expandedRow && expandedRow !== detailsRow) {
+            expandedRow.classList.remove('expanded');
+          }
+
+          detailsRow.classList.toggle('expanded');
+          expandedRow = detailsRow.classList.contains('expanded') ? detailsRow : null;
+        });
+      });
+    }
+
+    function updatePagination() {
+      paginationInfo.textContent = `Page ${currentPage} of ${totalPages} (${totalEvents} total)`;
+      prevPageBtn.disabled = currentPage <= 1;
+      nextPageBtn.disabled = currentPage >= totalPages;
+    }
+
+    async function loadEventTypes() {
+      const types = await fetchEventTypes();
+      filterType.innerHTML = '<option value="">All Types</option>' +
+        types.map(t => `<option value="${escapeHtml(t)}">${formatEventType(t)}</option>`).join('');
+      eventTypesCountEl.textContent = types.length;
+    }
+
+    async function loadEvents() {
+      const result = await fetchEvents(currentPage);
+      renderEvents(result.data);
+      totalEvents = result.pagination.total;
+      totalPages = result.pagination.totalPages;
+      currentPage = result.pagination.page;
+      totalEventsEl.textContent = totalEvents;
+      updatePagination();
+    }
+
+    async function loadStats() {
+      const todayCount = await fetchEventsToday();
+      eventsTodayEl.textContent = todayCount;
+    }
+
+    async function initialize() {
+      await Promise.all([loadEventTypes(), loadEvents(), loadStats()]);
+    }
+
+    // Event Listeners
+    applyFiltersBtn.addEventListener('click', () => {
+      currentPage = 1;
+      loadEvents();
+    });
+
+    clearFiltersBtn.addEventListener('click', () => {
+      filterType.value = '';
+      filterJid.value = '';
+      filterFrom.value = '';
+      filterTo.value = '';
+      currentPage = 1;
+      loadEvents();
+    });
+
+    refreshBtn.addEventListener('click', () => {
+      initialize();
+    });
+
+    prevPageBtn.addEventListener('click', () => {
+      if (currentPage > 1) {
+        currentPage--;
+        loadEvents();
+      }
+    });
+
+    nextPageBtn.addEventListener('click', () => {
+      if (currentPage < totalPages) {
+        currentPage++;
+        loadEvents();
+      }
+    });
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', initialize);
+  </script>
+</body>
+</html>

@@ -14,6 +14,8 @@ import * as QRCode from 'qrcode';
 import { config } from '../config/env.js';
 import { MessageService, CreateMessageParams } from './message.service.js';
 import { CommandService } from './command.service.js';
+import { errorService } from './error.service.js';
+import { eventService } from './event.service.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -23,11 +25,39 @@ export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'qr
 const logger = {
   level: 'silent',
   info: () => {},
-  error: (...args: unknown[]) => console.error('[WA]', ...args),
+  error: (...args: unknown[]) => {
+    console.error('[WA]', ...args);
+    // Log to database
+    const errorObj = args[0];
+    if (errorObj && typeof errorObj === 'object') {
+      const err = errorObj as Record<string, unknown>;
+      errorService.logError({
+        error_type: 'WhatsAppError',
+        error_message: err.error instanceof Error ? err.error.message : String(err.error || 'Unknown error'),
+        error_stack: err.error instanceof Error ? err.error.stack : undefined,
+        location: 'whatsapp.service.ts:logger',
+        context: JSON.stringify({
+          key: err.key,
+          messageType: err.messageType,
+          sender: err.sender,
+          author: err.author,
+        }),
+      });
+    }
+  },
   warn: () => {},
   debug: () => {},
   trace: () => {},
-  fatal: (...args: unknown[]) => console.error('[WA FATAL]', ...args),
+  fatal: (...args: unknown[]) => {
+    console.error('[WA FATAL]', ...args);
+    // Log fatal errors to database
+    const errorMessage = args.map(a => String(a)).join(' ');
+    errorService.logError({
+      error_type: 'WhatsAppFatalError',
+      error_message: errorMessage,
+      location: 'whatsapp.service.ts:logger.fatal',
+    });
+  },
   child: () => logger,
 };
 
@@ -223,6 +253,32 @@ export class WhatsAppService {
         await this.processCall(call);
       }
     });
+
+    // Handle message deletions (track but don't delete from DB)
+    this.socket.ev.on('messages.delete', (data) => {
+      if ('all' in data && data.all) {
+        // All messages in a chat were cleared
+        console.log(`[WA] Event: All messages cleared in chat ${data.jid}`);
+        eventService.logAllMessagesDelete(data.jid, { all: true });
+      } else if ('keys' in data) {
+        // Specific messages were deleted
+        for (const key of data.keys) {
+          console.log(`[WA] Event: Message deleted - id=${key.id}, chat=${key.remoteJid}`);
+          eventService.logMessageDelete(key.remoteJid || '', key.id || '', {
+            fromMe: key.fromMe,
+            participant: key.participant,
+          });
+        }
+      }
+    });
+
+    // Handle chat deletions (track but don't delete from DB)
+    this.socket.ev.on('chats.delete', (chatIds) => {
+      for (const chatId of chatIds) {
+        console.log(`[WA] Event: Chat deleted - ${chatId}`);
+        eventService.logChatDelete(chatId);
+      }
+    });
   }
 
   private ongoingCalls: Map<string, { startTime: number; from: string; isVideo: boolean }> = new Map();
@@ -306,7 +362,15 @@ export class WhatsAppService {
   private async processMessage(msg: proto.IWebMessageInfo): Promise<void> {
     if (!msg.key || !msg.message) return;
 
-    const remoteJid = msg.key.remoteJid || '';
+    // Normalize remoteJid - prefer the traditional @s.whatsapp.net format over @lid
+    // This ensures sent and received messages are grouped in the same conversation
+    let remoteJid = msg.key.remoteJid || '';
+
+    // If remoteJid uses LID format and we have an alternative, use the alternative
+    if (remoteJid.endsWith('@lid') && (msg.key as any).remoteJidAlt) {
+      remoteJid = (msg.key as any).remoteJidAlt;
+    }
+
     const isGroup = remoteJid.endsWith('@g.us');
 
     // Handle messageTimestamp which can be number, Long object, or undefined
@@ -325,10 +389,17 @@ export class WhatsAppService {
       timestamp = Math.floor(Date.now() / 1000);
     }
 
+    // Skip status/stories if not configured to store them
+    if (remoteJid === 'status@broadcast' && !config.whatsapp.storeStatusMessages) {
+      return;
+    }
+
     // Get sender name
     let senderName = msg.pushName || '';
     if (isGroup && msg.key.participant) {
-      senderName = msg.pushName || msg.key.participant;
+      // Prefer participantAlt over participant if it's in LID format
+      const participant = (msg.key as any).participantAlt || msg.key.participant;
+      senderName = msg.pushName || participant;
     }
 
     // Extract message content
@@ -592,6 +663,12 @@ export class WhatsAppService {
       return { path: `/media/${filename}` };
     } catch (error) {
       console.error('[WA] Error downloading media:', error);
+      errorService.logFromException(error, 'whatsapp.service.ts:downloadMedia', {
+        messageId: msg.key?.id,
+        remoteJid: msg.key?.remoteJid,
+        type,
+        mimetype,
+      });
       return null;
     }
   }
