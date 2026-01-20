@@ -7,6 +7,7 @@ export interface AppEvent {
   message_id: string | null;
   details: string | null;
   created_at: string;
+  chat_name?: string | null;
 }
 
 export interface CreateEventParams {
@@ -94,6 +95,52 @@ export class EventService {
     return row || null;
   }
 
+  /**
+   * Get chat/contact name from messages table based on remote_jid
+   * For groups: returns null (group metadata not stored)
+   * For individual chats: returns the contact's push name from messages
+   */
+  private getChatName(remoteJid: string): string | null {
+    const db = getDatabase();
+    const isGroup = remoteJid.endsWith('@g.us');
+
+    if (isGroup) {
+      // For groups, we don't have group metadata stored
+      // Return null to indicate it's a group without a known name
+      return null;
+    } else {
+      // For individual chats, get sender_name from received messages
+      const stmt = db.prepare(`
+        SELECT sender_name FROM messages
+        WHERE remote_jid = ? AND is_from_me = 0 AND sender_name IS NOT NULL AND sender_name != ''
+        ORDER BY timestamp DESC
+        LIMIT 1
+      `);
+      const row = stmt.get(remoteJid) as { sender_name: string } | undefined;
+      return row?.sender_name || null;
+    }
+  }
+
+  /**
+   * Enrich events with chat names
+   */
+  private enrichEventsWithChatNames(events: AppEvent[]): AppEvent[] {
+    const chatNameCache = new Map<string, string | null>();
+
+    return events.map(event => {
+      if (!event.remote_jid) return event;
+
+      if (!chatNameCache.has(event.remote_jid)) {
+        chatNameCache.set(event.remote_jid, this.getChatName(event.remote_jid));
+      }
+
+      return {
+        ...event,
+        chat_name: chatNameCache.get(event.remote_jid) || null,
+      };
+    });
+  }
+
   getEvents(filter: EventFilter = {}): { events: AppEvent[]; total: number } {
     const db = getDatabase();
     const { page = 1, limit = 50, event_type, remote_jid, from, to } = filter;
@@ -134,7 +181,10 @@ export class EventService {
     `);
     const rows = stmt.all(...params, limit, offset) as AppEvent[];
 
-    return { events: rows, total };
+    // Enrich events with chat names
+    const enrichedEvents = this.enrichEventsWithChatNames(rows);
+
+    return { events: enrichedEvents, total };
   }
 
   getEventTypes(): string[] {

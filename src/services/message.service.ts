@@ -41,6 +41,7 @@ export interface MessageFilter {
 export interface Conversation {
   remote_jid: string;
   sender_name: string | null;
+  group_name: string | null;
   is_group: boolean;
   last_message: string | null;
   last_message_type: string;
@@ -147,10 +148,10 @@ export class MessageService {
   getConversations(): Conversation[] {
     const db = getDatabase();
 
+    // Get basic conversation data
     const stmt = db.prepare(`
       SELECT
         remote_jid,
-        MAX(sender_name) as sender_name,
         MAX(is_group) as is_group,
         (SELECT content FROM messages m2 WHERE m2.remote_jid = m1.remote_jid ORDER BY timestamp DESC LIMIT 1) as last_message,
         (SELECT message_type FROM messages m2 WHERE m2.remote_jid = m1.remote_jid ORDER BY timestamp DESC LIMIT 1) as last_message_type,
@@ -161,11 +162,48 @@ export class MessageService {
       ORDER BY last_timestamp DESC
     `);
 
-    const rows = stmt.all() as Conversation[];
-    return rows.map(row => ({
-      ...row,
-      is_group: Boolean(row.is_group),
-    }));
+    const rows = stmt.all() as Array<{
+      remote_jid: string;
+      is_group: number;
+      last_message: string | null;
+      last_message_type: string;
+      last_timestamp: number;
+      unread_count: number;
+    }>;
+
+    // For each conversation, get the appropriate name
+    return rows.map(row => {
+      const isGroup = Boolean(row.is_group);
+      let senderName: string | null = null;
+      let groupName: string | null = null;
+
+      if (isGroup) {
+        // For groups, we don't have the group name stored
+        // Group metadata would need to be fetched from WhatsApp API
+        groupName = null;
+      } else {
+        // For individual chats, get the sender_name from received messages
+        const nameStmt = db.prepare(`
+          SELECT sender_name FROM messages
+          WHERE remote_jid = ? AND is_from_me = 0 AND sender_name IS NOT NULL AND sender_name != ''
+          ORDER BY timestamp DESC
+          LIMIT 1
+        `);
+        const nameRow = nameStmt.get(row.remote_jid) as { sender_name: string } | undefined;
+        senderName = nameRow?.sender_name || null;
+      }
+
+      return {
+        remote_jid: row.remote_jid,
+        sender_name: senderName,
+        group_name: groupName,
+        is_group: isGroup,
+        last_message: row.last_message,
+        last_message_type: row.last_message_type,
+        last_timestamp: row.last_timestamp,
+        unread_count: row.unread_count,
+      };
+    });
   }
 
   getLatestTimestamp(): number {

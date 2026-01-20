@@ -318,6 +318,16 @@ body {
 
 .conversation-avatar.group {
   background: #00a884;
+  position: relative;
+}
+
+.conversation-avatar.group::before {
+  content: '👥';
+  font-size: 1.4rem;
+}
+
+.conversation-avatar.group .avatar-initials {
+  display: none;
 }
 
 .conversation-details {
@@ -338,6 +348,18 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.group-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  background: #00a884;
+  color: white;
+  vertical-align: middle;
+  margin-right: 4px;
 }
 
 .conversation-time {

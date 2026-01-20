@@ -167,24 +167,34 @@ function renderConversations(filter = '') {
     return;
   }
 
-  conversationsList.innerHTML = filtered.map(conv => `
-    <div class="conversation-item ${currentConversation?.remote_jid === conv.remote_jid ? 'active' : ''}"
-         data-jid="${escapeHtml(conv.remote_jid)}">
-      <div class="conversation-avatar ${conv.is_group ? 'group' : ''}">
-        ${getInitials(conv.sender_name || conv.remote_jid)}
-      </div>
-      <div class="conversation-details">
-        <div class="conversation-header">
-          <span class="conversation-name">${escapeHtml(conv.sender_name || formatJid(conv.remote_jid))}</span>
-          <span class="conversation-time">${formatRelativeTime(conv.last_timestamp)}</span>
+  conversationsList.innerHTML = filtered.map(conv => {
+    const isGroup = conv.is_group;
+    const displayName = isGroup
+      ? (conv.group_name || 'Group')
+      : (conv.sender_name || formatJid(conv.remote_jid));
+    const groupId = isGroup ? formatJid(conv.remote_jid) : '';
+
+    return `
+      <div class="conversation-item ${currentConversation?.remote_jid === conv.remote_jid ? 'active' : ''}"
+           data-jid="${escapeHtml(conv.remote_jid)}">
+        <div class="conversation-avatar ${isGroup ? 'group' : ''}">
+          <span class="avatar-initials">${getInitials(displayName)}</span>
         </div>
-        <div class="conversation-preview">
-          <span class="conversation-last-message">${escapeHtml(conv.last_message || '[No content]')}</span>
-          <span class="conversation-badge">${conv.unread_count}</span>
+        <div class="conversation-details">
+          <div class="conversation-header">
+            <span class="conversation-name">
+              ${isGroup ? '<span class="group-badge">Group</span> ' : ''}${escapeHtml(displayName)}
+            </span>
+            <span class="conversation-time">${formatRelativeTime(conv.last_timestamp)}</span>
+          </div>
+          <div class="conversation-preview">
+            <span class="conversation-last-message">${escapeHtml(conv.last_message || '[No content]')}</span>
+            <span class="conversation-badge">${conv.unread_count}</span>
+          </div>
         </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 
   // Add click handlers
   document.querySelectorAll('.conversation-item').forEach(item => {
@@ -201,9 +211,12 @@ function renderConversations(filter = '') {
 function openConversation(conv) {
   currentConversation = conv;
 
-  // Update header
-  chatName.textContent = conv.sender_name || formatJid(conv.remote_jid);
-  chatJid.textContent = formatJid(conv.remote_jid);
+  // Update header with appropriate name
+  const displayName = conv.is_group
+    ? (conv.group_name || 'Group')
+    : (conv.sender_name || formatJid(conv.remote_jid));
+  chatName.textContent = displayName;
+  chatJid.textContent = conv.is_group ? `Group: ${formatJid(conv.remote_jid)}` : formatJid(conv.remote_jid);
 
   // Show chat view
   emptyState.classList.add('hidden');
