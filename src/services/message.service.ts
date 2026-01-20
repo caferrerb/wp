@@ -89,6 +89,13 @@ export class MessageService {
     return row ? this.mapRow(row) : null;
   }
 
+  getMessageByMessageId(messageId: string): Message | null {
+    const db = getDatabase();
+    const stmt = db.prepare('SELECT * FROM messages WHERE message_id = ?');
+    const row = stmt.get(messageId) as Message | undefined;
+    return row ? this.mapRow(row) : null;
+  }
+
   getMessages(filter: MessageFilter = {}): { messages: Message[]; total: number; sortOrder: 'asc' | 'desc' } {
     const db = getDatabase();
     const { from, to, page = 1, limit = 50, remoteJid, searchText, sortOrder } = filter;

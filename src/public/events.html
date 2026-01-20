@@ -266,6 +266,139 @@
       color: white;
       margin-right: 5px;
     }
+
+    .btn-view-message {
+      padding: 4px 8px;
+      font-size: 11px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-left: 8px;
+    }
+
+    .btn-view-message:hover {
+      background: #0056b3;
+    }
+
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.show {
+      display: flex;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 8px;
+      max-width: 600px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+
+    .modal-header {
+      padding: 15px 20px;
+      background: #1a1a2e;
+      color: white;
+      border-radius: 8px 8px 0 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 24px;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .modal-body {
+      padding: 20px;
+    }
+
+    .message-detail {
+      margin-bottom: 12px;
+    }
+
+    .message-detail label {
+      display: block;
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+
+    .message-detail .value {
+      font-size: 14px;
+      color: #333;
+      word-break: break-word;
+    }
+
+    .message-content-box {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 6px;
+      border-left: 4px solid #dc3545;
+      margin-top: 15px;
+    }
+
+    .message-content-box.deleted {
+      border-left-color: #dc3545;
+    }
+
+    .message-content-box label {
+      display: block;
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 8px;
+    }
+
+    .message-content-box .content {
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .message-not-found {
+      text-align: center;
+      padding: 30px;
+      color: #666;
+    }
+
+    .message-media-preview {
+      margin-top: 10px;
+    }
+
+    .message-media-preview img {
+      max-width: 100%;
+      max-height: 200px;
+      border-radius: 4px;
+    }
+
+    .message-media-preview audio,
+    .message-media-preview video {
+      max-width: 100%;
+    }
   </style>
 </head>
 <body>
@@ -344,7 +477,127 @@
     </div>
   </div>
 
+  <!-- Modal for viewing deleted message -->
+  <div class="modal-overlay" id="message-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Deleted Message</h3>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body">
+        <!-- Content will be loaded here -->
+      </div>
+    </div>
+  </div>
+
   <script>
+    // Modal elements
+    const messageModal = document.getElementById('message-modal');
+    const modalBody = document.getElementById('modal-body');
+    const modalClose = document.getElementById('modal-close');
+
+    // Modal functions
+    function showModal() {
+      messageModal.classList.add('show');
+    }
+
+    function hideModal() {
+      messageModal.classList.remove('show');
+    }
+
+    modalClose.addEventListener('click', hideModal);
+    messageModal.addEventListener('click', (e) => {
+      if (e.target === messageModal) hideModal();
+    });
+
+    async function fetchDeletedMessage(messageId) {
+      try {
+        const response = await fetch(`/api/messages/by-message-id/${encodeURIComponent(messageId)}`);
+        const data = await response.json();
+        return data.success ? data.data : null;
+      } catch (error) {
+        console.error('Error fetching message:', error);
+        return null;
+      }
+    }
+
+    function formatTimestamp(timestamp) {
+      const date = new Date(timestamp * 1000);
+      return date.toLocaleString('es-CO', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+    }
+
+    function renderMediaPreview(message) {
+      if (!message.media_path) return '';
+
+      const mediaPath = message.media_path;
+      const type = message.message_type;
+
+      switch (type) {
+        case 'image':
+        case 'sticker':
+          return `<div class="message-media-preview"><img src="${mediaPath}" alt="Image"></div>`;
+        case 'video':
+          return `<div class="message-media-preview"><video src="${mediaPath}" controls></video></div>`;
+        case 'audio':
+        case 'voice':
+          return `<div class="message-media-preview"><audio src="${mediaPath}" controls></audio></div>`;
+        case 'document':
+          return `<div class="message-media-preview"><a href="${mediaPath}" target="_blank">Download: ${escapeHtml(message.content || 'Document')}</a></div>`;
+        default:
+          return '';
+      }
+    }
+
+    async function viewDeletedMessage(messageId) {
+      modalBody.innerHTML = '<div class="message-not-found">Loading...</div>';
+      showModal();
+
+      const message = await fetchDeletedMessage(messageId);
+
+      if (!message) {
+        modalBody.innerHTML = `
+          <div class="message-not-found">
+            <p>Message not found in database</p>
+            <p style="font-size: 12px; color: #999;">Message ID: ${escapeHtml(messageId)}</p>
+          </div>
+        `;
+        return;
+      }
+
+      const isGroup = message.remote_jid.endsWith('@g.us');
+
+      modalBody.innerHTML = `
+        <div class="message-detail">
+          <label>From</label>
+          <div class="value">${escapeHtml(message.sender_name || 'Unknown')} ${isGroup ? '(Group)' : ''}</div>
+        </div>
+        <div class="message-detail">
+          <label>Chat</label>
+          <div class="value">${escapeHtml(message.remote_jid.split('@')[0])}</div>
+        </div>
+        <div class="message-detail">
+          <label>Date/Time</label>
+          <div class="value">${formatTimestamp(message.timestamp)}</div>
+        </div>
+        <div class="message-detail">
+          <label>Message Type</label>
+          <div class="value">${escapeHtml(message.message_type)}</div>
+        </div>
+        <div class="message-content-box deleted">
+          <label>Deleted Content</label>
+          <div class="content">${escapeHtml(message.content || '[No text content]')}</div>
+          ${renderMediaPreview(message)}
+        </div>
+      `;
+    }
+
     // State
     let currentPage = 1;
     let totalPages = 1;
@@ -472,12 +725,16 @@
         const phoneNumber = extractPhoneNumber(evt.remote_jid);
         const chatType = isGroup ? '<span class="badge-group">Group</span>' : '';
         const chatName = evt.chat_name ? escapeHtml(evt.chat_name) : (isGroup ? 'Group Chat' : phoneNumber);
+        const canViewMessage = evt.event_type === 'message_delete' && evt.message_id;
+        const viewMessageBtn = canViewMessage
+          ? `<button class="btn-view-message" onclick="event.stopPropagation(); viewDeletedMessage('${escapeHtml(evt.message_id)}')">View Message</button>`
+          : '';
 
         return `
           <tr class="event-row" data-id="${evt.id}">
             <td>${evt.id}</td>
             <td class="event-time">${formatDateTime(evt.created_at)}</td>
-            <td><span class="event-type-badge ${evt.event_type}">${formatEventType(evt.event_type)}</span></td>
+            <td><span class="event-type-badge ${evt.event_type}">${formatEventType(evt.event_type)}</span>${viewMessageBtn}</td>
             <td class="event-jid" title="${escapeHtml(evt.remote_jid || '')}">${chatType} ${chatName}</td>
             <td class="event-jid">${phoneNumber}</td>
             <td class="event-message-id" title="${escapeHtml(evt.message_id || '')}">${escapeHtml(evt.message_id || '-')}</td>
@@ -490,6 +747,7 @@
                 <strong>Type:</strong> ${isGroup ? 'Group Chat' : 'Individual Chat'}<br>
                 ${evt.chat_name ? `<strong>Contact Name:</strong> ${escapeHtml(evt.chat_name)}<br>` : ''}
                 <strong>Message ID:</strong> ${escapeHtml(evt.message_id || 'N/A')}<br>
+                ${canViewMessage ? `<button class="btn-view-message" onclick="viewDeletedMessage('${escapeHtml(evt.message_id)}')">View Deleted Message</button><br><br>` : ''}
                 ${evt.details ? `<strong>Details:</strong><pre class="event-details-json">${escapeHtml(evt.details)}</pre>` : ''}
               </div>
             </td>

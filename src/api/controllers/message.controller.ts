@@ -72,6 +72,29 @@ export class MessageController {
     }
   };
 
+  getMessageByMessageId = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const messageId = req.params.messageId as string;
+
+      if (!messageId) {
+        res.status(400).json({ success: false, error: 'messageId is required' });
+        return;
+      }
+
+      const message = this.messageService.getMessageByMessageId(messageId);
+
+      if (!message) {
+        res.status(404).json({ success: false, error: 'Message not found' });
+        return;
+      }
+
+      res.json({ success: true, data: message });
+    } catch (error) {
+      console.error('Error getting message by messageId:', error);
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  };
+
   exportCsv = async (req: Request, res: Response): Promise<void> => {
     try {
       const { from, to } = req.query;

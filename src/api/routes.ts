@@ -19,6 +19,7 @@ export function createRouter(
 
   // Messages
   router.get('/messages', controller.getMessages);
+  router.get('/messages/by-message-id/:messageId', controller.getMessageByMessageId);
 
   // Export
   router.get('/export-csv', controller.exportCsv);
