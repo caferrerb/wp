@@ -14,7 +14,7 @@ import { MessageController } from './api/controllers/message.controller.js';
 import { ErrorController } from './api/controllers/error.controller.js';
 import { EventController } from './api/controllers/event.controller.js';
 import { createRouter } from './api/routes.js';
-import { ErrorService, errorService } from './services/error.service.js';
+import { errorService } from './services/error.service.js';
 import { eventService } from './services/event.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
