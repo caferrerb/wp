@@ -325,7 +325,7 @@
             <th>Time</th>
             <th>Type</th>
             <th>Chat/Group</th>
-            <th>Phone Number</th>
+            <th>Phone/Group ID</th>
             <th>Message ID</th>
           </tr>
         </thead>
@@ -486,7 +486,7 @@
             <td colspan="6">
               <div class="event-details-content">
                 <strong>Full JID:</strong> ${escapeHtml(evt.remote_jid || 'N/A')}<br>
-                <strong>Phone/Group ID:</strong> ${phoneNumber}<br>
+                <strong>${isGroup ? 'Group ID:' : 'Phone Number:'}</strong> ${phoneNumber}<br>
                 <strong>Type:</strong> ${isGroup ? 'Group Chat' : 'Individual Chat'}<br>
                 ${evt.chat_name ? `<strong>Contact Name:</strong> ${escapeHtml(evt.chat_name)}<br>` : ''}
                 <strong>Message ID:</strong> ${escapeHtml(evt.message_id || 'N/A')}<br>
