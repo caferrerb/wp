@@ -16,6 +16,7 @@ import { MessageService, CreateMessageParams } from './message.service.js';
 import { CommandService } from './command.service.js';
 import { errorService } from './error.service.js';
 import { eventService } from './event.service.js';
+import { groupService } from './group.service.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -403,6 +404,9 @@ export class WhatsAppService {
       participantJid = (msg.key as any).participantAlt || msg.key.participant;
       // Use pushName for sender_name, fallback to participant JID
       senderName = msg.pushName || '';
+
+      // Fetch and cache group name (async, non-blocking)
+      this.fetchAndCacheGroupName(remoteJid).catch(() => {});
     }
 
     // Extract message content
@@ -473,6 +477,31 @@ export class WhatsAppService {
       console.log(`[WA] Reply sent to ${formattedJid}`);
     } catch (error) {
       console.error('[WA] Error sending message:', error);
+    }
+  }
+
+  /**
+   * Fetch and cache group metadata (name)
+   */
+  async fetchAndCacheGroupName(groupJid: string): Promise<void> {
+    if (!this.socket || this.status !== 'connected') {
+      return;
+    }
+
+    // Check if we need to refresh (not cached or older than 24 hours)
+    if (!groupService.needsRefresh(groupJid)) {
+      return;
+    }
+
+    try {
+      const metadata = await this.socket.groupMetadata(groupJid);
+      if (metadata && metadata.subject) {
+        groupService.saveGroupName(groupJid, metadata.subject);
+        console.log(`[WA] Cached group name: ${metadata.subject} for ${groupJid}`);
+      }
+    } catch (error) {
+      // Group metadata fetch can fail for various reasons (not in group, etc.)
+      console.log(`[WA] Could not fetch group metadata for ${groupJid}:`, error instanceof Error ? error.message : 'Unknown error');
     }
   }
 

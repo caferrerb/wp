@@ -1,4 +1,5 @@
 import { getDatabase } from '../database/connection.js';
+import { groupService } from './group.service.js';
 
 export interface Message {
   id: number;
@@ -181,6 +182,9 @@ export class MessageService {
       unread_count: number;
     }>;
 
+    // Get all cached group names for efficiency
+    const groupNames = groupService.getAllGroupNames();
+
     // For each conversation, get the appropriate name
     return rows.map(row => {
       const isGroup = Boolean(row.is_group);
@@ -188,9 +192,8 @@ export class MessageService {
       let groupName: string | null = null;
 
       if (isGroup) {
-        // For groups, we don't have the group name stored
-        // Group metadata would need to be fetched from WhatsApp API
-        groupName = null;
+        // Get group name from cache
+        groupName = groupNames.get(row.remote_jid) || null;
       } else {
         // For individual chats, get the sender_name from received messages
         const nameStmt = db.prepare(`

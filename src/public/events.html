@@ -735,7 +735,11 @@
 
         const contactName = detailsObj.contact_name || evt.chat_name;
         const contactPhone = detailsObj.contact_phone;
-        const chatName = contactName ? escapeHtml(contactName) : (isGroup ? 'Group Chat' : phoneNumber);
+        const groupName = detailsObj.group_name;
+        // For groups, prefer group_name; for individual chats, prefer contact_name
+        const chatName = isGroup
+          ? (groupName ? escapeHtml(groupName) : 'Group Chat')
+          : (contactName ? escapeHtml(contactName) : phoneNumber);
         // Show real phone if available, otherwise show extracted from JID
         const displayPhone = contactPhone || phoneNumber;
 
@@ -759,7 +763,8 @@
                 <strong>Full JID:</strong> ${escapeHtml(evt.remote_jid || 'N/A')}<br>
                 ${contactPhone ? `<strong>Phone Number:</strong> ${contactPhone}<br>` : `<strong>${isGroup ? 'Group ID:' : 'ID:'}</strong> ${phoneNumber}<br>`}
                 <strong>Type:</strong> ${isGroup ? 'Group Chat' : 'Individual Chat'}<br>
-                ${contactName ? `<strong>Contact Name:</strong> ${escapeHtml(contactName)}<br>` : ''}
+                ${isGroup && groupName ? `<strong>Group Name:</strong> ${escapeHtml(groupName)}<br>` : ''}
+                ${!isGroup && contactName ? `<strong>Contact Name:</strong> ${escapeHtml(contactName)}<br>` : ''}
                 <strong>Message ID:</strong> ${escapeHtml(evt.message_id || 'N/A')}<br>
                 ${canViewMessage ? `<button class="btn-view-message" onclick="viewDeletedMessage('${escapeHtml(evt.message_id)}')">View Deleted Message</button><br><br>` : ''}
                 ${evt.details ? `<strong>Details:</strong><pre class="event-details-json">${escapeHtml(evt.details)}</pre>` : ''}

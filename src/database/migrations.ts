@@ -78,5 +78,17 @@ export function runMigrations(): void {
     CREATE INDEX IF NOT EXISTS idx_events_remote_jid ON events(remote_jid);
   `);
 
+  // Create groups table for caching group metadata
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_jid TEXT UNIQUE NOT NULL,
+      group_name TEXT,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_groups_group_jid ON groups(group_jid);
+  `);
+
   console.log('Database migrations completed');
 }

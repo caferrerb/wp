@@ -1,4 +1,5 @@
 import { getDatabase } from '../database/connection.js';
+import { groupService } from './group.service.js';
 
 export interface AppEvent {
   id: number;
@@ -75,9 +76,15 @@ export class EventService {
   logChatDelete(remoteJid: string, details?: Record<string, unknown>): AppEvent | null {
     // Try to get additional info from messages table
     const contactInfo = this.getContactInfoFromMessages(remoteJid);
+
+    // Get group name if it's a group
+    const isGroup = remoteJid.endsWith('@g.us');
+    const groupName = isGroup ? groupService.getGroupName(remoteJid) : null;
+
     const enrichedDetails = {
       ...details,
       ...contactInfo,
+      group_name: groupName,
     };
 
     return this.logEvent({
@@ -90,9 +97,15 @@ export class EventService {
   logAllMessagesDelete(remoteJid: string, details?: Record<string, unknown>): AppEvent | null {
     // Try to get additional info from messages table
     const contactInfo = this.getContactInfoFromMessages(remoteJid);
+
+    // Get group name if it's a group
+    const isGroup = remoteJid.endsWith('@g.us');
+    const groupName = isGroup ? groupService.getGroupName(remoteJid) : null;
+
     const enrichedDetails = {
       ...details,
       ...contactInfo,
+      group_name: groupName,
     };
 
     return this.logEvent({
@@ -159,7 +172,7 @@ export class EventService {
 
   /**
    * Get chat/contact name from messages table based on remote_jid
-   * For groups: returns null (group metadata not stored)
+   * For groups: returns the cached group name
    * For individual chats: returns the contact's push name from messages
    */
   private getChatName(remoteJid: string): string | null {
@@ -167,9 +180,8 @@ export class EventService {
     const isGroup = remoteJid.endsWith('@g.us');
 
     if (isGroup) {
-      // For groups, we don't have group metadata stored
-      // Return null to indicate it's a group without a known name
-      return null;
+      // Get group name from cache
+      return groupService.getGroupName(remoteJid);
     } else {
       // For individual chats, get sender_name from received messages
       const stmt = db.prepare(`
