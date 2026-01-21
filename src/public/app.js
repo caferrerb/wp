@@ -235,8 +235,8 @@ function openConversation(conv) {
   // Mark as active in list
   renderConversations(searchInput.value);
 
-  // Load messages
-  loadMessages(conv.remote_jid);
+  // Load messages (force scroll to bottom on first load)
+  loadMessages(conv.remote_jid, true);
   startMessagesPolling();
 }
 
@@ -283,12 +283,16 @@ function renderMediaContent(msg) {
   }
 }
 
-function renderMessages(messages) {
+function renderMessages(messages, forceScrollToBottom = false) {
   if (messages.length === 0) {
     messagesContainer.innerHTML = '<div class="no-conversations"><p>No messages</p></div>';
     messageCount.textContent = '0 messages';
     return;
   }
+
+  // Check if user is near the bottom before re-rendering
+  const scrollThreshold = 100; // pixels from bottom
+  const wasNearBottom = messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight < scrollThreshold;
 
   messageCount.textContent = `${messages.length} messages`;
 
@@ -304,8 +308,10 @@ function renderMessages(messages) {
     </div>
   `).join('');
 
-  // Scroll to bottom
-  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  // Only scroll to bottom if forced (first load) or user was already near the bottom
+  if (forceScrollToBottom || wasNearBottom) {
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
 }
 
 // Data loading functions
@@ -314,10 +320,10 @@ async function loadConversations() {
   renderConversations(searchInput.value);
 }
 
-async function loadMessages(remoteJid) {
+async function loadMessages(remoteJid, forceScrollToBottom = false) {
   const messages = await fetchMessages(remoteJid);
   currentMessages = messages;
-  renderMessages(messages);
+  renderMessages(messages, forceScrollToBottom);
 }
 
 // Polling functions
