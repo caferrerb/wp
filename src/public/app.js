@@ -178,12 +178,19 @@ function renderConversations(filter = '') {
       ? (conv.group_name || 'Group')
       : (conv.sender_name || formatJid(conv.remote_jid));
     const groupId = isGroup ? formatJid(conv.remote_jid) : '';
+    const profilePicture = conv.profile_picture;
+
+    // Build avatar content - image if available, otherwise initials
+    const avatarContent = profilePicture
+      ? `<img src="${escapeHtml(profilePicture)}" alt="Avatar" class="avatar-image" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+         <span class="avatar-initials" style="display: none;">${getInitials(displayName)}</span>`
+      : `<span class="avatar-initials">${getInitials(displayName)}</span>`;
 
     return `
       <div class="conversation-item ${currentConversation?.remote_jid === conv.remote_jid ? 'active' : ''}"
            data-jid="${escapeHtml(conv.remote_jid)}">
         <div class="conversation-avatar ${isGroup ? 'group' : ''}">
-          <span class="avatar-initials">${getInitials(displayName)}</span>
+          ${avatarContent}
         </div>
         <div class="conversation-details">
           <div class="conversation-header">

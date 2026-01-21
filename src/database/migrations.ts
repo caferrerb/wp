@@ -84,10 +84,31 @@ export function runMigrations(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       group_jid TEXT UNIQUE NOT NULL,
       group_name TEXT,
+      profile_picture TEXT,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE INDEX IF NOT EXISTS idx_groups_group_jid ON groups(group_jid);
+  `);
+
+  // Add profile_picture column if it doesn't exist
+  try {
+    db.exec(`ALTER TABLE groups ADD COLUMN profile_picture TEXT`);
+  } catch {
+    // Column already exists
+  }
+
+  // Create contacts table for caching individual contact info
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS contacts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      contact_jid TEXT UNIQUE NOT NULL,
+      contact_name TEXT,
+      profile_picture TEXT,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_contacts_contact_jid ON contacts(contact_jid);
   `);
 
   console.log('Database migrations completed');

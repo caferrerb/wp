@@ -405,8 +405,11 @@ export class WhatsAppService {
       // Use pushName for sender_name, fallback to participant JID
       senderName = msg.pushName || '';
 
-      // Fetch and cache group name (async, non-blocking)
+      // Fetch and cache group name and picture (async, non-blocking)
       this.fetchAndCacheGroupName(remoteJid).catch(() => {});
+    } else if (!isGroup) {
+      // For individual chats, cache contact profile picture (async, non-blocking)
+      this.fetchAndCacheProfilePicture(remoteJid).catch(() => {});
     }
 
     // Extract message content
@@ -481,7 +484,7 @@ export class WhatsAppService {
   }
 
   /**
-   * Fetch and cache group metadata (name)
+   * Fetch and cache group metadata (name and profile picture)
    */
   async fetchAndCacheGroupName(groupJid: string): Promise<void> {
     if (!this.socket || this.status !== 'connected') {
@@ -498,10 +501,78 @@ export class WhatsAppService {
       if (metadata && metadata.subject) {
         groupService.saveGroupName(groupJid, metadata.subject);
         console.log(`[WA] Cached group name: ${metadata.subject} for ${groupJid}`);
+
+        // Fetch and cache profile picture
+        this.fetchAndCacheProfilePicture(groupJid).catch(() => {});
       }
     } catch (error) {
       // Group metadata fetch can fail for various reasons (not in group, etc.)
       console.log(`[WA] Could not fetch group metadata for ${groupJid}:`, error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+
+  /**
+   * Fetch and cache profile picture for a JID (group or contact)
+   */
+  async fetchAndCacheProfilePicture(jid: string): Promise<void> {
+    if (!this.socket || this.status !== 'connected') {
+      return;
+    }
+
+    const isGroup = jid.endsWith('@g.us');
+
+    // Check if we need to refresh
+    if (isGroup) {
+      if (!groupService.needsRefresh(jid)) {
+        return;
+      }
+    } else {
+      if (!groupService.contactNeedsRefresh(jid)) {
+        return;
+      }
+    }
+
+    try {
+      // Get profile picture URL from WhatsApp
+      const url = await this.socket.profilePictureUrl(jid, 'image');
+
+      if (url) {
+        // Download the image
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`Failed to download: ${response.status}`);
+        }
+
+        const buffer = Buffer.from(await response.arrayBuffer());
+
+        // Generate filename based on JID
+        const safeJid = jid.replace(/[@.:]/g, '_');
+        const filename = `profile_${safeJid}.jpg`;
+        const filePath = path.join(this.mediaPath, 'profiles', filename);
+
+        // Ensure profiles directory exists
+        const profilesDir = path.join(this.mediaPath, 'profiles');
+        if (!fs.existsSync(profilesDir)) {
+          fs.mkdirSync(profilesDir, { recursive: true });
+        }
+
+        // Save file
+        fs.writeFileSync(filePath, buffer);
+
+        // Save path to database
+        const webPath = `/media/profiles/${filename}`;
+        if (isGroup) {
+          groupService.updateGroupProfilePicture(jid, webPath);
+        } else {
+          groupService.updateContactProfilePicture(jid, webPath);
+        }
+
+        console.log(`[WA] Cached profile picture for ${jid}`);
+      }
+    } catch (error) {
+      // Profile picture fetch can fail (no picture set, privacy settings, etc.)
+      // This is normal, just log at debug level
+      console.log(`[WA] Could not fetch profile picture for ${jid}:`, error instanceof Error ? error.message : 'Unknown error');
     }
   }
 

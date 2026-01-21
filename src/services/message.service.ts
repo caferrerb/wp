@@ -45,6 +45,7 @@ export interface Conversation {
   remote_jid: string;
   sender_name: string | null;
   group_name: string | null;
+  profile_picture: string | null;
   is_group: boolean;
   last_message: string | null;
   last_message_type: string;
@@ -182,18 +183,22 @@ export class MessageService {
       unread_count: number;
     }>;
 
-    // Get all cached group names for efficiency
+    // Get all cached group names and profile pictures for efficiency
     const groupNames = groupService.getAllGroupNames();
+    const groupPictures = groupService.getAllGroupProfilePictures();
+    const contactPictures = groupService.getAllContactProfilePictures();
 
-    // For each conversation, get the appropriate name
+    // For each conversation, get the appropriate name and profile picture
     return rows.map(row => {
       const isGroup = Boolean(row.is_group);
       let senderName: string | null = null;
       let groupName: string | null = null;
+      let profilePicture: string | null = null;
 
       if (isGroup) {
-        // Get group name from cache
+        // Get group name and picture from cache
         groupName = groupNames.get(row.remote_jid) || null;
+        profilePicture = groupPictures.get(row.remote_jid) || null;
       } else {
         // For individual chats, get the sender_name from received messages
         const nameStmt = db.prepare(`
@@ -204,12 +209,14 @@ export class MessageService {
         `);
         const nameRow = nameStmt.get(row.remote_jid) as { sender_name: string } | undefined;
         senderName = nameRow?.sender_name || null;
+        profilePicture = contactPictures.get(row.remote_jid) || null;
       }
 
       return {
         remote_jid: row.remote_jid,
         sender_name: senderName,
         group_name: groupName,
+        profile_picture: profilePicture,
         is_group: isGroup,
         last_message: row.last_message,
         last_message_type: row.last_message_type,
