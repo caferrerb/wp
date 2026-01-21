@@ -68,9 +68,14 @@ async function fetchConversations() {
 
 async function fetchMessages(remoteJid) {
   try {
-    const response = await fetch(`/api/messages?remoteJid=${encodeURIComponent(remoteJid)}&limit=100`);
+    // Request latest 100 messages in DESC order, then reverse to show chronologically
+    const response = await fetch(`/api/messages?remoteJid=${encodeURIComponent(remoteJid)}&limit=100&sortOrder=desc`);
     const data = await response.json();
-    return data.success ? data.data : [];
+    if (data.success) {
+      // Reverse to show oldest first (chat view order)
+      return data.data.reverse();
+    }
+    return [];
   } catch (error) {
     console.error('Error fetching messages:', error);
     return [];
