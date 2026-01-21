@@ -296,17 +296,25 @@ function renderMessages(messages, forceScrollToBottom = false) {
 
   messageCount.textContent = `${messages.length} messages`;
 
-  messagesContainer.innerHTML = messages.map(msg => `
-    <div class="message ${msg.is_from_me ? 'outgoing' : 'incoming'}">
-      ${currentConversation?.is_group && !msg.is_from_me ? `<div class="message-sender">${escapeHtml(msg.sender_name || formatJid(msg.remote_jid))}</div>` : ''}
-      ${renderMediaContent(msg)}
-      <div class="message-content">${escapeHtml(msg.content || '[No content]')}</div>
-      <div class="message-meta">
-        ${msg.message_type !== 'text' ? `<span class="message-type-badge">${msg.message_type}</span>` : ''}
-        <span class="message-time">${formatTime(msg.timestamp)}</span>
+  messagesContainer.innerHTML = messages.map(msg => {
+    const phoneNumber = formatJid(msg.remote_jid);
+    const senderName = msg.sender_name || 'Unknown';
+    const tooltipInfo = msg.is_from_me
+      ? `Sent by you\nTo: ${phoneNumber}`
+      : `From: ${senderName}\nPhone: ${phoneNumber}\nType: ${msg.message_type}`;
+
+    return `
+      <div class="message ${msg.is_from_me ? 'outgoing' : 'incoming'}" title="${escapeHtml(tooltipInfo)}">
+        ${currentConversation?.is_group && !msg.is_from_me ? `<div class="message-sender">${escapeHtml(msg.sender_name || formatJid(msg.remote_jid))}</div>` : ''}
+        ${renderMediaContent(msg)}
+        <div class="message-content">${escapeHtml(msg.content || '[No content]')}</div>
+        <div class="message-meta">
+          ${msg.message_type !== 'text' ? `<span class="message-type-badge">${msg.message_type}</span>` : ''}
+          <span class="message-time">${formatTime(msg.timestamp)}</span>
+        </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 
   // Only scroll to bottom if forced (first load) or user was already near the bottom
   if (forceScrollToBottom || wasNearBottom) {
