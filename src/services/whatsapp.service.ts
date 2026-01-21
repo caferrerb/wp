@@ -394,12 +394,15 @@ export class WhatsAppService {
       return;
     }
 
-    // Get sender name
+    // Get sender name and participant JID for groups
     let senderName = msg.pushName || '';
+    let participantJid: string | undefined;
+
     if (isGroup && msg.key.participant) {
-      // Prefer participantAlt over participant if it's in LID format
-      const participant = (msg.key as any).participantAlt || msg.key.participant;
-      senderName = msg.pushName || participant;
+      // Prefer participantAlt (phone number format) over participant (may be LID format)
+      participantJid = (msg.key as any).participantAlt || msg.key.participant;
+      // Use pushName for sender_name, fallback to participant JID
+      senderName = msg.pushName || '';
     }
 
     // Extract message content
@@ -413,6 +416,7 @@ export class WhatsAppService {
     const messageParams: CreateMessageParams = {
       remote_jid: remoteJid,
       sender_name: senderName,
+      participant_jid: participantJid,
       message_id: msg.key.id || `${Date.now()}`,
       message_type: extracted.type,
       content: extracted.content,

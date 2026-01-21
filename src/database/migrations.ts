@@ -40,6 +40,11 @@ export function runMigrations(): void {
   } catch {
     // Column already exists
   }
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN participant_jid TEXT`);
+  } catch {
+    // Column already exists
+  }
 
   // Create errors table for logging application errors
   db.exec(`

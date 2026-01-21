@@ -299,9 +299,10 @@ function renderMessages(messages, forceScrollToBottom = false) {
   messagesContainer.innerHTML = messages.map(msg => {
     const isGroup = msg.remote_jid.endsWith('@g.us');
     const chatId = formatJid(msg.remote_jid);
-    const senderName = msg.sender_name || 'Unknown';
-    // Check if sender_name looks like a phone number or LID
-    const senderDisplay = senderName.includes('@') ? formatJid(senderName) : senderName;
+    const senderName = msg.sender_name || '';
+    const participantPhone = msg.participant_jid ? formatJid(msg.participant_jid) : '';
+    // Display name: prefer sender_name, fallback to participant phone
+    const senderDisplay = senderName || participantPhone || 'Unknown';
 
     let tooltipInfo;
     if (msg.is_from_me) {
@@ -309,14 +310,14 @@ function renderMessages(messages, forceScrollToBottom = false) {
         ? `Sent by you\nGroup: ${chatId}`
         : `Sent by you\nTo: ${chatId}`;
     } else if (isGroup) {
-      tooltipInfo = `From: ${senderDisplay}\nGroup: ${chatId}\nType: ${msg.message_type}`;
+      tooltipInfo = `From: ${senderDisplay}${participantPhone ? `\nPhone: ${participantPhone}` : ''}\nGroup: ${chatId}\nType: ${msg.message_type}`;
     } else {
       tooltipInfo = `From: ${senderDisplay}\nPhone: ${chatId}\nType: ${msg.message_type}`;
     }
 
     return `
       <div class="message ${msg.is_from_me ? 'outgoing' : 'incoming'}" title="${escapeHtml(tooltipInfo)}">
-        ${currentConversation?.is_group && !msg.is_from_me ? `<div class="message-sender">${escapeHtml(senderDisplay)}</div>` : ''}
+        ${currentConversation?.is_group && !msg.is_from_me ? `<div class="message-sender">${escapeHtml(senderDisplay)}${participantPhone && senderName ? ` (${participantPhone})` : ''}</div>` : ''}
         ${renderMediaContent(msg)}
         <div class="message-content">${escapeHtml(msg.content || '[No content]')}</div>
         <div class="message-meta">

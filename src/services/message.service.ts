@@ -4,6 +4,7 @@ export interface Message {
   id: number;
   remote_jid: string;
   sender_name: string | null;
+  participant_jid: string | null;
   message_id: string;
   message_type: string;
   content: string | null;
@@ -18,6 +19,7 @@ export interface Message {
 export interface CreateMessageParams {
   remote_jid: string;
   sender_name?: string;
+  participant_jid?: string;
   message_id: string;
   message_type: string;
   content?: string;
@@ -55,13 +57,14 @@ export class MessageService {
 
     try {
       const stmt = db.prepare(`
-        INSERT INTO messages (remote_jid, sender_name, message_id, message_type, content, timestamp, is_group, is_from_me, media_path, media_mimetype)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO messages (remote_jid, sender_name, participant_jid, message_id, message_type, content, timestamp, is_group, is_from_me, media_path, media_mimetype)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const result = stmt.run(
         params.remote_jid,
         params.sender_name || null,
+        params.participant_jid || null,
         params.message_id,
         params.message_type,
         params.content || null,
