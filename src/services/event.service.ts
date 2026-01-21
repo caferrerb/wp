@@ -73,19 +73,81 @@ export class EventService {
   }
 
   logChatDelete(remoteJid: string, details?: Record<string, unknown>): AppEvent | null {
+    // Try to get additional info from messages table
+    const contactInfo = this.getContactInfoFromMessages(remoteJid);
+    const enrichedDetails = {
+      ...details,
+      ...contactInfo,
+    };
+
     return this.logEvent({
       event_type: 'chat_delete',
       remote_jid: remoteJid,
-      details,
+      details: enrichedDetails,
     });
   }
 
   logAllMessagesDelete(remoteJid: string, details?: Record<string, unknown>): AppEvent | null {
+    // Try to get additional info from messages table
+    const contactInfo = this.getContactInfoFromMessages(remoteJid);
+    const enrichedDetails = {
+      ...details,
+      ...contactInfo,
+    };
+
     return this.logEvent({
       event_type: 'chat_clear',
       remote_jid: remoteJid,
-      details,
+      details: enrichedDetails,
     });
+  }
+
+  /**
+   * Get contact info from messages table for a given JID
+   * Useful when the JID is a LID format and we need the real phone number
+   */
+  private getContactInfoFromMessages(remoteJid: string): Record<string, string | null> {
+    const db = getDatabase();
+
+    try {
+      // Get the most recent message info for this chat
+      const stmt = db.prepare(`
+        SELECT sender_name, participant_jid, remote_jid
+        FROM messages
+        WHERE remote_jid = ? AND is_from_me = 0
+        ORDER BY timestamp DESC
+        LIMIT 1
+      `);
+      const row = stmt.get(remoteJid) as { sender_name: string | null; participant_jid: string | null; remote_jid: string } | undefined;
+
+      if (row) {
+        return {
+          contact_name: row.sender_name,
+          contact_phone: row.participant_jid ? row.participant_jid.split('@')[0] : null,
+        };
+      }
+
+      // If no received messages, try to get from sent messages (for the phone number format)
+      const sentStmt = db.prepare(`
+        SELECT remote_jid FROM messages WHERE remote_jid = ? LIMIT 1
+      `);
+      const sentRow = sentStmt.get(remoteJid) as { remote_jid: string } | undefined;
+
+      if (sentRow) {
+        const phoneNumber = sentRow.remote_jid.split('@')[0];
+        // Check if it looks like a phone number (not a LID)
+        const isPhoneNumber = !sentRow.remote_jid.endsWith('@lid') && /^\d+$/.test(phoneNumber);
+        return {
+          contact_name: null,
+          contact_phone: isPhoneNumber ? phoneNumber : null,
+        };
+      }
+
+      return { contact_name: null, contact_phone: null };
+    } catch (error) {
+      console.error('[EventService] Error getting contact info:', error);
+      return { contact_name: null, contact_phone: null };
+    }
   }
 
   getEventById(id: number): AppEvent | null {

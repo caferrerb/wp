@@ -724,7 +724,21 @@
         const isGroup = isGroupJid(evt.remote_jid);
         const phoneNumber = extractPhoneNumber(evt.remote_jid);
         const chatType = isGroup ? '<span class="badge-group">Group</span>' : '';
-        const chatName = evt.chat_name ? escapeHtml(evt.chat_name) : (isGroup ? 'Group Chat' : phoneNumber);
+
+        // Parse details to get contact info
+        let detailsObj = {};
+        try {
+          if (evt.details) {
+            detailsObj = JSON.parse(evt.details);
+          }
+        } catch (e) {}
+
+        const contactName = detailsObj.contact_name || evt.chat_name;
+        const contactPhone = detailsObj.contact_phone;
+        const chatName = contactName ? escapeHtml(contactName) : (isGroup ? 'Group Chat' : phoneNumber);
+        // Show real phone if available, otherwise show extracted from JID
+        const displayPhone = contactPhone || phoneNumber;
+
         const canViewMessage = evt.event_type === 'message_delete' && evt.message_id;
         const viewMessageBtn = canViewMessage
           ? `<button class="btn-view-message" onclick="event.stopPropagation(); viewDeletedMessage('${escapeHtml(evt.message_id)}')">View Message</button>`
@@ -736,16 +750,16 @@
             <td class="event-time">${formatDateTime(evt.created_at)}</td>
             <td><span class="event-type-badge ${evt.event_type}">${formatEventType(evt.event_type)}</span>${viewMessageBtn}</td>
             <td class="event-jid" title="${escapeHtml(evt.remote_jid || '')}">${chatType} ${chatName}</td>
-            <td class="event-jid">${phoneNumber}</td>
+            <td class="event-jid">${displayPhone}</td>
             <td class="event-message-id" title="${escapeHtml(evt.message_id || '')}">${escapeHtml(evt.message_id || '-')}</td>
           </tr>
           <tr class="event-details" data-details-id="${evt.id}">
             <td colspan="6">
               <div class="event-details-content">
                 <strong>Full JID:</strong> ${escapeHtml(evt.remote_jid || 'N/A')}<br>
-                <strong>${isGroup ? 'Group ID:' : 'Phone Number:'}</strong> ${phoneNumber}<br>
+                ${contactPhone ? `<strong>Phone Number:</strong> ${contactPhone}<br>` : `<strong>${isGroup ? 'Group ID:' : 'ID:'}</strong> ${phoneNumber}<br>`}
                 <strong>Type:</strong> ${isGroup ? 'Group Chat' : 'Individual Chat'}<br>
-                ${evt.chat_name ? `<strong>Contact Name:</strong> ${escapeHtml(evt.chat_name)}<br>` : ''}
+                ${contactName ? `<strong>Contact Name:</strong> ${escapeHtml(contactName)}<br>` : ''}
                 <strong>Message ID:</strong> ${escapeHtml(evt.message_id || 'N/A')}<br>
                 ${canViewMessage ? `<button class="btn-view-message" onclick="viewDeletedMessage('${escapeHtml(evt.message_id)}')">View Deleted Message</button><br><br>` : ''}
                 ${evt.details ? `<strong>Details:</strong><pre class="event-details-json">${escapeHtml(evt.details)}</pre>` : ''}
