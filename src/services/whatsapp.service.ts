@@ -12,6 +12,7 @@ import makeWASocket, {
 import { Boom } from '@hapi/boom';
 import * as QRCode from 'qrcode';
 import { config } from '../config/env.js';
+import { getDatabase } from '../database/connection.js';
 import { MessageService, CreateMessageParams } from './message.service.js';
 import { CommandService } from './command.service.js';
 import { errorService } from './error.service.js';
@@ -250,8 +251,17 @@ export class WhatsAppService {
     // Handle incoming calls
     this.socket.ev.on('call', async (calls) => {
       for (const call of calls) {
-        console.log(`[WA] Call event: id=${call.id}, from=${call.from}, status=${call.status}, isVideo=${call.isVideo}`);
-        await this.processCall(call);
+        console.log(`[WA] Call event: id=${call.id}, from=${call.from}, chatId=${call.chatId}, groupJid=${(call as any).groupJid}, status=${call.status}, isVideo=${call.isVideo}, isGroup=${call.isGroup}`);
+        await this.processCall({
+          id: call.id,
+          from: call.from,
+          chatId: call.chatId,
+          groupJid: (call as any).groupJid,
+          status: call.status,
+          isVideo: call.isVideo,
+          isGroup: call.isGroup,
+          offline: call.offline,
+        });
       }
     });
 
@@ -284,8 +294,30 @@ export class WhatsAppService {
 
   private ongoingCalls: Map<string, { startTime: number; from: string; isVideo: boolean }> = new Map();
 
-  private async processCall(call: { id: string; from: string; status: string; isVideo?: boolean; isGroup?: boolean; offline?: boolean }): Promise<void> {
-    const remoteJid = call.from;
+  private async processCall(call: { id: string; from: string; chatId?: string; groupJid?: string; status: string; isVideo?: boolean; isGroup?: boolean; offline?: boolean }): Promise<void> {
+    // Determine the correct JID for the conversation:
+    // - For group calls: use groupJid
+    // - For individual calls: use chatId (which should be the @s.whatsapp.net format)
+    // - Fallback to 'from' if neither is available
+    let remoteJid: string;
+    if (call.isGroup && call.groupJid) {
+      remoteJid = call.groupJid;
+    } else if (call.chatId && !call.chatId.endsWith('@lid')) {
+      remoteJid = call.chatId;
+    } else {
+      remoteJid = call.from;
+    }
+
+    // Normalize: if the JID is in LID format, try to find the real JID from existing messages
+    if (remoteJid.endsWith('@lid')) {
+      const realJid = this.findRealJidFromMessages(remoteJid) || this.findRealJidFromMessages(call.from);
+      if (realJid) {
+        remoteJid = realJid;
+      }
+    }
+
+    console.log(`[WA] Call resolved JID: ${remoteJid} (from=${call.from}, chatId=${call.chatId}, groupJid=${call.groupJid})`);
+
     const isVideo = call.isVideo || false;
     const callType = isVideo ? 'video_call' : 'call';
     const callTypeLabel = isVideo ? 'Video call' : 'Call';
@@ -480,6 +512,32 @@ export class WhatsAppService {
       console.log(`[WA] Reply sent to ${formattedJid}`);
     } catch (error) {
       console.error('[WA] Error sending message:', error);
+    }
+  }
+
+  /**
+   * Find the real JID (@s.whatsapp.net or @g.us) from messages table
+   * when we only have a LID format JID
+   */
+  private findRealJidFromMessages(lidJid: string): string | null {
+    try {
+      const db = getDatabase();
+
+      // Check if we have any messages with a participant_jid that matches the LID
+      // This can help map a LID to the real phone number
+      const stmt = db.prepare(`
+        SELECT DISTINCT remote_jid FROM messages
+        WHERE participant_jid = ? OR remote_jid = ?
+        LIMIT 1
+      `);
+      const row = stmt.get(lidJid, lidJid) as { remote_jid: string } | undefined;
+      if (row && !row.remote_jid.endsWith('@lid')) {
+        return row.remote_jid;
+      }
+
+      return null;
+    } catch {
+      return null;
     }
   }
 
