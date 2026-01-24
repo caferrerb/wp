@@ -304,15 +304,20 @@ export class WhatsAppService {
       remoteJid = call.groupJid;
     } else if (call.chatId && !call.chatId.endsWith('@lid')) {
       remoteJid = call.chatId;
-    } else {
+    } else if (call.from && !call.from.endsWith('@lid')) {
       remoteJid = call.from;
+    } else {
+      remoteJid = call.chatId || call.from;
     }
 
-    // Normalize: if the JID is in LID format, try to find the real JID from existing messages
+    // Resolve LID format JIDs using stored mappings
     if (remoteJid.endsWith('@lid')) {
-      const realJid = this.findRealJidFromMessages(remoteJid) || this.findRealJidFromMessages(call.from);
-      if (realJid) {
-        remoteJid = realJid;
+      // Try to resolve using all available LID JIDs
+      const resolved = this.resolveJidFromMapping(remoteJid)
+        || (call.chatId ? this.resolveJidFromMapping(call.chatId) : null)
+        || (call.from ? this.resolveJidFromMapping(call.from) : null);
+      if (resolved) {
+        remoteJid = resolved;
       }
     }
 
@@ -401,7 +406,10 @@ export class WhatsAppService {
 
     // If remoteJid uses LID format and we have an alternative, use the alternative
     if (remoteJid.endsWith('@lid') && (msg.key as any).remoteJidAlt) {
+      const lidJid = remoteJid;
       remoteJid = (msg.key as any).remoteJidAlt;
+      // Save LID -> real JID mapping for use in calls and other events
+      this.saveJidMapping(lidJid, remoteJid);
     }
 
     const isGroup = remoteJid.endsWith('@g.us');
@@ -436,6 +444,11 @@ export class WhatsAppService {
       participantJid = (msg.key as any).participantAlt || msg.key.participant;
       // Use pushName for sender_name, fallback to participant JID
       senderName = msg.pushName || '';
+
+      // Save participant LID -> real JID mapping
+      if ((msg.key as any).participantAlt && msg.key.participant?.endsWith('@lid')) {
+        this.saveJidMapping(msg.key.participant, (msg.key as any).participantAlt);
+      }
 
       // Fetch and cache group name and picture (async, non-blocking)
       this.fetchAndCacheGroupName(remoteJid).catch(() => {});
@@ -516,23 +529,49 @@ export class WhatsAppService {
   }
 
   /**
-   * Find the real JID (@s.whatsapp.net or @g.us) from messages table
-   * when we only have a LID format JID
+   * Save a LID -> real JID mapping to the database
    */
-  private findRealJidFromMessages(lidJid: string): string | null {
+  private saveJidMapping(lidJid: string, realJid: string): void {
+    try {
+      const db = getDatabase();
+      const stmt = db.prepare(`
+        INSERT INTO jid_mappings (lid_jid, real_jid, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(lid_jid) DO UPDATE SET
+          real_jid = excluded.real_jid,
+          updated_at = CURRENT_TIMESTAMP
+      `);
+      stmt.run(lidJid, realJid);
+    } catch {
+      // Ignore errors - mapping is best-effort
+    }
+  }
+
+  /**
+   * Resolve a LID JID to the real JID using stored mappings
+   */
+  private resolveJidFromMapping(lidJid: string): string | null {
     try {
       const db = getDatabase();
 
-      // Check if we have any messages with a participant_jid that matches the LID
-      // This can help map a LID to the real phone number
-      const stmt = db.prepare(`
-        SELECT DISTINCT remote_jid FROM messages
-        WHERE participant_jid = ? OR remote_jid = ?
+      // First check the jid_mappings table
+      const stmt = db.prepare('SELECT real_jid FROM jid_mappings WHERE lid_jid = ?');
+      const row = stmt.get(lidJid) as { real_jid: string } | undefined;
+      if (row) {
+        return row.real_jid;
+      }
+
+      // Also try matching without the @lid suffix in case the call uses
+      // the bare LID number with @s.whatsapp.net
+      const lidNumber = lidJid.split('@')[0];
+      const stmtByNumber = db.prepare(`
+        SELECT real_jid FROM jid_mappings
+        WHERE lid_jid LIKE ?
         LIMIT 1
       `);
-      const row = stmt.get(lidJid, lidJid) as { remote_jid: string } | undefined;
-      if (row && !row.remote_jid.endsWith('@lid')) {
-        return row.remote_jid;
+      const rowByNumber = stmtByNumber.get(`${lidNumber}@%`) as { real_jid: string } | undefined;
+      if (rowByNumber) {
+        return rowByNumber.real_jid;
       }
 
       return null;

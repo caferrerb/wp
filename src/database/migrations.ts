@@ -111,5 +111,14 @@ export function runMigrations(): void {
     CREATE INDEX IF NOT EXISTS idx_contacts_contact_jid ON contacts(contact_jid);
   `);
 
+  // Create jid_mappings table for LID to real JID resolution
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS jid_mappings (
+      lid_jid TEXT PRIMARY KEY,
+      real_jid TEXT NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
   console.log('Database migrations completed');
 }
