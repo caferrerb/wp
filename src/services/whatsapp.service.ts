@@ -299,19 +299,19 @@ export class WhatsAppService {
     // - For group calls: use groupJid
     // - For individual calls: use chatId (which should be the @s.whatsapp.net format)
     // - Fallback to 'from' if neither is available
-    let remoteJid: string;
+    let remoteJid: string = call.from || call.chatId || '';
+
+    // Try to get a non-LID JID first
     if (call.isGroup && call.groupJid) {
       remoteJid = call.groupJid;
     } else if (call.chatId && !call.chatId.endsWith('@lid')) {
       remoteJid = call.chatId;
     } else if (call.from && !call.from.endsWith('@lid')) {
       remoteJid = call.from;
-    } else {
-      remoteJid = call.chatId || call.from;
     }
 
     // Resolve LID format JIDs using stored mappings
-    if (remoteJid.endsWith('@lid')) {
+    if (remoteJid && remoteJid.endsWith('@lid')) {
       // Try to resolve using all available LID JIDs
       const resolved = this.resolveJidFromMapping(remoteJid)
         || (call.chatId ? this.resolveJidFromMapping(call.chatId) : null)
@@ -319,6 +319,12 @@ export class WhatsAppService {
       if (resolved) {
         remoteJid = resolved;
       }
+    }
+
+    // Ensure we have a valid JID - use whatever we have
+    if (!remoteJid) {
+      remoteJid = call.from || call.chatId || `unknown_${call.id}`;
+      console.log(`[WA] Call: No valid JID found, using fallback: ${remoteJid}`);
     }
 
     console.log(`[WA] Call resolved JID: ${remoteJid} (from=${call.from}, chatId=${call.chatId}, groupJid=${call.groupJid})`);
