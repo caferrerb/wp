@@ -295,6 +295,7 @@ export class WhatsAppService {
   private ongoingCalls: Map<string, { startTime: number; from: string; isVideo: boolean }> = new Map();
 
   private async processCall(call: { id: string; from: string; chatId?: string; groupJid?: string; status: string; isVideo?: boolean; isGroup?: boolean; offline?: boolean }): Promise<void> {
+    try {
     // Determine the correct JID for the conversation:
     // - For group calls: use groupJid
     // - For individual calls: use chatId (which should be the @s.whatsapp.net format)
@@ -400,6 +401,15 @@ export class WhatsAppService {
       }
 
       this.ongoingCalls.delete(call.id);
+    }
+    } catch (error) {
+      console.error(`[WA] Error processing call:`, error);
+      errorService.logFromException(error, 'whatsapp.service.ts:processCall', {
+        callId: call.id,
+        from: call.from,
+        chatId: call.chatId,
+        status: call.status,
+      });
     }
   }
 
@@ -554,34 +564,50 @@ export class WhatsAppService {
   }
 
   /**
-   * Resolve a LID JID to the real JID using stored mappings
+   * Resolve a LID JID to the real JID using stored mappings and message history
    */
   private resolveJidFromMapping(lidJid: string): string | null {
     try {
       const db = getDatabase();
 
       // First check the jid_mappings table
-      const stmt = db.prepare('SELECT real_jid FROM jid_mappings WHERE lid_jid = ?');
-      const row = stmt.get(lidJid) as { real_jid: string } | undefined;
-      if (row) {
-        return row.real_jid;
+      try {
+        const stmt = db.prepare('SELECT real_jid FROM jid_mappings WHERE lid_jid = ?');
+        const row = stmt.get(lidJid) as { real_jid: string } | undefined;
+        if (row) {
+          console.log(`[WA] JID resolved from mappings: ${lidJid} -> ${row.real_jid}`);
+          return row.real_jid;
+        }
+      } catch (e) {
+        // Table might not exist yet
+        console.log(`[WA] jid_mappings table error:`, e);
       }
 
-      // Also try matching without the @lid suffix in case the call uses
-      // the bare LID number with @s.whatsapp.net
+      // Fallback: try to find a conversation with recent messages
+      // that might match this contact by looking at message patterns
       const lidNumber = lidJid.split('@')[0];
-      const stmtByNumber = db.prepare(`
-        SELECT real_jid FROM jid_mappings
-        WHERE lid_jid LIKE ?
+
+      // Look for any individual chat (not group) that has messages
+      // This is a last resort - we pick the most recent active chat
+      // if we can't find a specific mapping
+      const recentChat = db.prepare(`
+        SELECT DISTINCT remote_jid FROM messages
+        WHERE is_group = 0
+        AND remote_jid NOT LIKE '%@lid'
+        AND remote_jid LIKE '%@s.whatsapp.net'
+        ORDER BY timestamp DESC
         LIMIT 1
-      `);
-      const rowByNumber = stmtByNumber.get(`${lidNumber}@%`) as { real_jid: string } | undefined;
-      if (rowByNumber) {
-        return rowByNumber.real_jid;
+      `).get() as { remote_jid: string } | undefined;
+
+      // Don't use this fallback automatically - it's too risky
+      // Just log what we found for debugging
+      if (recentChat) {
+        console.log(`[WA] Could not resolve ${lidJid}, most recent chat is ${recentChat.remote_jid}`);
       }
 
       return null;
-    } catch {
+    } catch (error) {
+      console.error(`[WA] Error resolving JID mapping:`, error);
       return null;
     }
   }
